@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/cricbuzz/merge-desk/main/docs/mergedesk.schema.json",
+  "title": ".mergedesk.json",
+  "description": "Per-repository Merge Desk configuration. Every key is optional; missing keys use the built-in defaults. Keep in sync with Sources/MergeDeskCore/Config/RepoConfig.swift.",
+  "type": "object",
+  "patternProperties": {
+    "^\\$": { "description": "Keys starting with $ are notes or schema references and are ignored." }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "glob": {
+      "type": "string",
+      "minLength": 1,
+      "description": "* = any characters within one path segment, ? = one character, ** (whole segment) = any number of segments. Case-sensitive; no implicit match-anywhere."
+    },
+    "argv": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Program and arguments, run without a shell from the repository root."
+    },
+    "confidence": { "enum": ["low", "medium", "high"] },
+    "strategy": { "enum": ["regenerate", "pbxproj", "unionEntries", "jsonKeys", "escalate"] }
+  },
+  "properties": {
+    "schemaVersion": { "const": 1, "default": 1 },
+    "integrationBranches": {
+      "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true,
+      "default": ["develop", "main"],
+      "description": "Branches every other branch is compared and predicted against, in display order."
+    },
+    "protectedBranches": {
+      "type": "array", "items": { "$ref": "#/$defs/glob" }, "default": ["main", "develop", "release/*"],
+      "description": "Branch-name globs that only receive changes through a pull request."
+    },
+    "staleDays": {
+      "type": "integer", "minimum": 1, "maximum": 3650, "default": 21,
+      "description": "Days without a commit after which a branch counts as stale."
+    },
+    "activeBranchPrefixes": {
+      "type": "array", "items": { "type": "string", "minLength": 1 }, "default": [],
+      "description": "Prefixes of active-work branches for the branch × branch matrix; empty = every non-integration branch."
+    },
+    "fileClasses": {
+      "type": "array",
+      "description": "Tier-1 rules; the first matching glob wins. Files matching no rule go to the history engine.",
+      "default": [
+        { "glob": "**/*.pbxproj", "strategy": "pbxproj" },
+        { "glob": "**/Package.resolved", "strategy": "escalate" }
+      ],
+      "items": {
+        "type": "object",
+        "required": ["glob", "strategy"],
+        "additionalProperties": false,
+        "properties": {
+          "glob": { "$ref": "#/$defs/glob" },
+          "strategy": { "$ref": "#/$defs/strategy" }
+        }
+      }
+    },
+    "regenerateCommand": {
+      "$ref": "#/$defs/argv",
+      "description": "Run once after 'regenerate' files are taken. Required when any file class uses 'regenerate'."
+    },
+    "verifyCommands": {
+      "type": "array", "items": { "$ref": "#/$defs/argv" }, "default": [],
+      "description": "Run by the verification gate before a merge is marked ready."
+    },
+    "autoApplyMinConfidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": { "$ref": "#/$defs/confidence", "default": "high" },
+        "byStrategy": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/strategy" },
+          "additionalProperties": { "$ref": "#/$defs/confidence" }
+        }
+      }
+    }
+  }
+}

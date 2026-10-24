@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    # macOS: the package targets macOS 14+ and the tests drive the real /usr/bin/git.
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          swift --version
+          git --version
+
+      - name: Lint
+        run: |
+          brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+          swiftlint lint --strict
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test --parallel
+
+      - name: CLI smoke test
+        run: |
+          swift run mergedesk version
+          swift run mergedesk config validate --file docs/examples/mercury-ios.mergedesk.json
+          swift run mergedesk fixtures build "$RUNNER_TEMP/fixtures"

@@ -1,0 +1,15 @@
+# Merge Desk lint rules. Run: swiftlint lint --strict (CI does).
+included:
+  - Sources
+  - Tests
+excluded:
+  - .build
+line_length:
+  warning: 140
+  error: 160
+  ignores_comments: true
+disabled_rules:
+  # Trailing commas keep multi-line literals diff-friendly (same style as Package.swift).
+  - trailing_comma
+  # git output is bytes; String(decoding:as:) repairs invalid UTF-8 instead of dropping a path, on purpose.
+  - optional_data_string_conversion

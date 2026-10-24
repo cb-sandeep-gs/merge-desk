@@ -1,0 +1,12 @@
+# SwiftPM / Xcode build output
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Local fixture repos built by hand (`mergedesk fixtures build fixtures-local`)
+fixtures-local/
