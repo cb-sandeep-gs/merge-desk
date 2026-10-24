@@ -1,4 +1,4 @@
-import MergeDeskCore
+@testable import MergeDeskCore
 import MergeDeskFixtures
 @testable import MergeDeskUI
 import XCTest
@@ -241,6 +241,75 @@ final class AppModelTests: XCTestCase {
         app.selectedRepositoryID = firstID
         app.selectedRepositoryID = app.repositories.last?.id
         XCTAssertTrue(app.selectedModel === model, "switching back keeps the same model (filters, selection)")
+    }
+}
+
+@MainActor
+final class SessionsModelTests: XCTestCase {
+    private var folder: URL!
+    private let git = ProcessGitClient(environmentOverrides: FixtureBuilder.isolatedEnvironment)
+
+    override func setUp() async throws {
+        folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mergedesk-sessions-\(UUID().uuidString)", isDirectory: true).resolvingSymlinksInPath()
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    func testMergeApplyUndoThroughTheModel() async throws {
+        let fixture = try await FixtureBuilder().build(.cleanMerge, in: folder)
+        let model = RepositoryModel(repository: RegisteredRepository(path: fixture.url.path), git: git,
+                                    paths: SupportPaths(root: folder.appendingPathComponent("support")),
+                                    github: GitHubCLI(executableURL: nil))
+        model.refresh()
+        await model.waitForRefresh()
+        let sessions = model.sessions
+
+        let preview = await sessions.preview(source: FixtureBranch.source, target: FixtureBranch.target,
+                                             inventory: try XCTUnwrap(model.inventory))
+        XCTAssertEqual(preview?.isClean, true)
+
+        await sessions.startMerge(source: FixtureBranch.source, target: FixtureBranch.target, strategy: .mergeCommit, fetch: false)
+        let session = try XCTUnwrap(sessions.selected)
+        XCTAssertEqual(session.state, .ready)
+        XCTAssertEqual(SessionAction.available(for: session), [.apply, .abort])
+        XCTAssertEqual(sessions.openCount, 1)
+
+        await sessions.run(.apply, on: session)
+        XCTAssertTrue(sessions.errorMessage?.contains("checked out") ?? false, "the fixture is on the target branch")
+        _ = try await git.run(["switch", "--quiet", FixtureBranch.base], in: fixture.url)
+
+        await sessions.run(.apply, on: session)
+        XCTAssertNil(sessions.errorMessage)
+        let applied = try XCTUnwrap(sessions.selected)
+        XCTAssertEqual(applied.state, .applied)
+        XCTAssertEqual(SessionAction.available(for: applied), [.push, .undo])
+        XCTAssertTrue(SessionAction.push.needsConfirmation)
+
+        await sessions.run(.push, on: applied, confirmed: false)
+        XCTAssertTrue(sessions.errorMessage?.contains("confirmation") ?? false)
+
+        await sessions.run(.undo, on: applied)
+        XCTAssertEqual(sessions.selected?.state, .undone)
+        XCTAssertEqual(sessions.openCount, 0)
+        await model.waitForRefresh()
+        let target = try await git.execute(.commitID(of: FixtureBranch.target), in: fixture.url)
+        XCTAssertEqual(target, applied.targetLocalID)
+    }
+
+    func testPullRequestNoteComesFirst() throws {
+        let fixtureBranch = BranchRecord(name: "feature/x", local: nil, remotes: [], tip: GitRef(
+            fullName: "refs/remotes/origin/feature/x", kind: .remote(name: "origin"), branchName: "feature/x",
+            objectID: String(repeating: "a", count: 40), committerDate: Date(), authorName: "A", authorEmail: "a@x", upstream: nil),
+            isIntegration: false, isProtected: false, isActiveWork: true, isStale: true, localSync: nil, integration: [])
+        let pullRequest = PullRequestInfo(number: 42, title: "T", url: "u", headRefName: "feature/x", baseRefName: "develop",
+                                 isDraft: false, checks: .failing)
+        let row = BranchRow(fixtureBranch, integrationNames: [], pullRequest: pullRequest)
+        XCTAssertEqual(row.notes.first, .pullRequest(number: 42, checks: .failing))
+        XCTAssertEqual(row.notes.first?.text, "PR #42 ✗")
     }
 }
 

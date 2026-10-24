@@ -11,7 +11,7 @@ public struct MergeOutcome: Sendable, Equatable, Codable {
 
     public var isClean: Bool { conflictedPaths.isEmpty }
 
-    init(_ result: MergeTreeResult) {
+    public init(_ result: MergeTreeResult) {
         treeID = result.treeID
         conflictedPaths = result.conflictedPaths
         var kinds: [String: [String]] = [:]
@@ -67,7 +67,7 @@ public struct MergePrediction: Sendable, Equatable, Codable {
     /// Conflicts that will need the history engine or a person.
     public var manualCount: Int { conflicts.count - automaticCount }
 
-    init(targetID: String, sourceID: String, outcome: MergeOutcome, config: RepoConfig) {
+    public init(targetID: String, sourceID: String, outcome: MergeOutcome, config: RepoConfig) {
         self.targetID = targetID
         self.sourceID = sourceID
         conflicts = outcome.conflictedPaths.map { path in

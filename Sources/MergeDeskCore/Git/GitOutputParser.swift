@@ -249,6 +249,36 @@ public enum GitOutputParser {
         data.split(separator: nul, omittingEmptySubsequences: true).map { decode($0) }.sorted()
     }
 
+    // MARK: - worktree list --porcelain -z
+
+    private enum WorktreeField {
+        static let worktree = "worktree "
+        static let head = "HEAD "
+        static let branch = "branch "
+    }
+
+    /// Records of NUL-terminated `key value` fields, each record ended by an empty field.
+    public static func parseWorktrees(_ data: Data) -> [WorktreeInfo] {
+        var worktrees: [WorktreeInfo] = []
+        var path: String?
+        var head: String?
+        var branch: String?
+        for field in data.split(separator: nul, omittingEmptySubsequences: false).map({ decode($0) }) {
+            if field.isEmpty {
+                if let path { worktrees.append(WorktreeInfo(path: path, headID: head, branchRef: branch)) }
+                (path, head, branch) = (nil, nil, nil)
+            } else if field.hasPrefix(WorktreeField.worktree) {
+                path = String(field.dropFirst(WorktreeField.worktree.count))
+            } else if field.hasPrefix(WorktreeField.head) {
+                head = String(field.dropFirst(WorktreeField.head.count))
+            } else if field.hasPrefix(WorktreeField.branch) {
+                branch = String(field.dropFirst(WorktreeField.branch.count))
+            }
+        }
+        if let path { worktrees.append(WorktreeInfo(path: path, headID: head, branchRef: branch)) }
+        return worktrees
+    }
+
     // MARK: - version
 
     public static func parseVersion(_ text: String) throws -> GitVersion {

@@ -100,14 +100,14 @@ public struct BranchRow: Identifiable, Sendable, Equatable {
     }
 
     public init(_ branch: BranchRecord, integrationNames: [String], mergePrediction: BranchPrediction? = nil,
-                predictionsLoaded: Bool = false) {
+                predictionsLoaded: Bool = false, pullRequest: PullRequestInfo? = nil) {
         name = branch.name
         presence = branch.presence
         lastCommit = branch.tip.committerDate
         author = branch.tip.authorName
         first = ComparisonCell(integrationNames.first.flatMap(branch.status(against:)))
         second = ComparisonCell(integrationNames.dropFirst().first.flatMap(branch.status(against:)))
-        notes = BranchNote.notes(for: branch)
+        notes = BranchNote.notes(for: branch, pullRequest: pullRequest)
         merge = branch.isIntegration ? MergeCell(nil, loaded: true) : MergeCell(mergePrediction, loaded: predictionsLoaded)
     }
 
@@ -143,6 +143,7 @@ public enum BranchNote: Sendable, Equatable, Hashable {
     case neverPushed
     case unpushed(Int)
     case toPull(Int)
+    case pullRequest(number: Int, checks: CheckSummary)
 
     public var text: String {
         switch self {
@@ -153,6 +154,13 @@ public enum BranchNote: Sendable, Equatable, Hashable {
         case .neverPushed: return "Never pushed"
         case let .unpushed(count): return "\(count) unpushed"
         case let .toPull(count): return "\(count) to pull"
+        case let .pullRequest(number, checks):
+            switch checks {
+            case .passing: return "PR #\(number) ✓"
+            case .failing: return "PR #\(number) ✗"
+            case .pending: return "PR #\(number) …"
+            case .none: return "PR #\(number)"
+            }
         }
     }
 
@@ -164,8 +172,10 @@ public enum BranchNote: Sendable, Equatable, Hashable {
         }
     }
 
-    static func notes(for branch: BranchRecord) -> [BranchNote] {
+    static func notes(for branch: BranchRecord, pullRequest: PullRequestInfo? = nil) -> [BranchNote] {
         var notes: [BranchNote] = []
+        // An open PR is the most useful fact about a branch, so it comes first.
+        if let pullRequest { notes.append(.pullRequest(number: pullRequest.number, checks: pullRequest.checks)) }
         if branch.isIntegration { notes.append(.integration) }
         if branch.isProtected { notes.append(.protected) }
         if branch.isStale { notes.append(.stale) }

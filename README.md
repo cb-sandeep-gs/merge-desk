@@ -4,10 +4,10 @@ A macOS app and CLI for any Cricbuzz git repository. It lists every branch with 
 before anyone merges, runs merges safely, and resolves conflicts from file-type rules and **git history** — with
 evidence and a confidence score for every decision.
 
-> **Status: MD-2 (conflict prediction + daily digest).** Every branch's merge into each integration branch and
-> every pair of active branches is predicted with `git merge-tree` (nothing checked out), cached by commit id, and
-> summarised in a daily digest with notifications. Merging and resolution arrive in MD-3 → MD-8 — see
-> [docs/PLAN.md](docs/PLAN.md).
+> **Status: MD-3 (merge sessions).** Predict every merge (`git merge-tree`), get a daily digest, and run merges
+> safely: each merge happens in its own worktree, Apply moves a branch only by compare-and-swap with a backup ref,
+> Undo restores the exact commit, pushes need confirmation and protected branches only get pull requests.
+> Automatic conflict resolution arrives in MD-4 → MD-8 — see [docs/PLAN.md](docs/PLAN.md).
 
 ## Requirements
 
@@ -38,6 +38,11 @@ Add a repository with **+** (any folder inside a clone; the folder is never modi
 - **Daily Digest** — what needs attention today: your branches to rebase, new and resolved conflicts since the last
   run, every predicted conflict with each integration branch and between branches, drifting, stale and merged
   branches. **Fetch & Run Now** runs it on demand.
+- **Merges** — merge sessions, newest first. Select a branch and choose **Merge…** (target, merge commit or squash,
+  fetch first, and a conflict preview). The merge runs in a separate worktree; then, step by step:
+  **Mark Resolved & Continue** (after editing conflicts in the worktree) → **Apply** (moves the local branch, with a
+  backup ref) → **Push…** or, for protected targets, **Open Pull Request…** (pushes a `mergedesk/…` branch and opens
+  the PR with `gh`, or GitHub's compare page). **Undo** puts the branch back exactly; **Abort** discards the worktree.
 - **Detail** — the selected branch's predicted merges (with how each conflicting file would be resolved), commits not yet in the integration branch, files changed since it forked, and
   other active branches that changed the same files *since the two diverged* (measured from each pair's own merge
   base, so commits both already share don't count).
@@ -54,7 +59,13 @@ Digests are saved as Markdown in `~/Library/Application Support/MergeDesk/repos/
 
 Comparisons use the **primary remote's copy** of each branch (what the team sees); local-only commits show as
 "unpushed". Browsing never fetches; the daily run (and **Fetch & Run Now**) runs `git fetch --prune`, which only
-updates remote-tracking refs. Nothing ever merges, pushes or touches the working tree. `MERGEDESK_SUPPORT_DIR=/some/folder` points the app and CLI
+updates remote-tracking refs.
+
+**Merge safety.** Merges run in a worktree under `~/Library/Application Support/MergeDesk/…/worktrees/`, never in
+your checkout. Apply refuses if the branch is checked out anywhere or moved since the merge started, and keeps the
+old commit at `refs/mergedesk/backup/<UTC time>/<branch>`. Pushes are never forced. The repository's own commit
+hooks run on merge commits. Every step is recorded in the audit log. If `gh` is installed and signed in, open PRs
+and their CI state appear as badges on the Branches table. `MERGEDESK_SUPPORT_DIR=/some/folder` points the app and CLI
 at another support folder (demos, testing).
 
 | Command | What it does |
@@ -65,6 +76,8 @@ at another support folder (demos, testing).
 | `mergedesk daily [--all] [--no-fetch] [--no-notify]` | Fetch, predict, write today's digest, notify if something is new |
 | `mergedesk digest` | Print the latest digest |
 | `mergedesk schedule --at HH:MM \| --remove \| --run-now` | Install/remove the daily LaunchAgent, or run it now |
+| `mergedesk merge BRANCH --into TARGET [--strategy merge\|squash] [--no-fetch]` | Start a merge session in its own worktree |
+| `mergedesk session list \| show \| continue \| apply \| push \| pr \| undo \| abort ID` | Move a session along (`push`/`pr` ask first; `--yes` skips) |
 | `mergedesk version` | Merge Desk and git versions |
 | `mergedesk doctor [--repo PATH]` | Checks git, the repository, its `.mergedesk.json` and that the integration branches exist |
 | `mergedesk config validate [--repo PATH \| --file PATH]` | Validates a config; exits 1 on errors, prints warnings |
@@ -83,6 +96,8 @@ Sources/
     Inventory/          InventoryBuilder, BranchRecord, BranchFilter, BranchDetailLoader, ComparisonCache
     Prediction/         Predictor (git merge-tree), PredictionStore (disk cache), prediction models
     Daily/              DailyRunner, DigestBuilder + DigestMarkdown, DailySchedule (LaunchAgent), notifiers
+    Session/            MergeSession + state machine, SessionStore, SessionManager (worktree, apply, undo, push, PR)
+    GitHub/             remote parsing, compare URLs, optional gh adapter (PRs, CI state)
     Storage/            AuditLog (append-only JSONL), RepositoryRegistry, SupportPaths (~/Library/Application Support/MergeDesk)
   MergeDeskFixtures/    scripted, deterministic git repositories: conflict patterns + an origin/clone inventory fixture
   MergeDeskUI/          @Observable view models (AppModel, RepositoryModel) and SwiftUI views

@@ -7,12 +7,14 @@ public enum ContentMode: String, CaseIterable, Sendable {
     case branches
     case matrix
     case digest
+    case merges
 
     public var title: String {
         switch self {
         case .branches: return "Branches"
         case .matrix: return "Conflict Matrix"
         case .digest: return "Daily Digest"
+        case .merges: return "Merges"
         }
     }
 }
@@ -35,6 +37,10 @@ public final class RepositoryModel {
     public private(set) var dailyError: String?
     /// Config warnings (e.g. unknown keys) to show above the table.
     public private(set) var configWarnings: [String] = []
+    /// Merge sessions for this repository.
+    public let sessions: SessionsModel
+    /// Open pull requests by head branch (only when the GitHub CLI is installed and signed in).
+    public private(set) var pullRequests: [String: PullRequestInfo] = [:]
 
     /// Remembered per repository between launches.
     public var contentMode: ContentMode = .branches {
@@ -58,6 +64,8 @@ public final class RepositoryModel {
     }
     /// Selected matrix cell.
     public var selectedPair: PairPrediction?
+    /// The Merge… sheet for the selected branch.
+    public var isMergeSheetPresented = false
 
     /// Filtered and sorted rows for the table.
     public private(set) var rows: [BranchRow] = []
@@ -69,7 +77,14 @@ public final class RepositoryModel {
     static let contentModeKeyPrefix = "contentMode."
     private let cache = ComparisonCache()
     private let predictionStore: PredictionStore
-    private var config = RepoConfig.defaults
+    private let github: GitHubCLI
+    /// Shared with `sessions`, which always merges with the latest loaded config.
+    @ObservationIgnored private let configHolder = ConfigHolder()
+    private var config: RepoConfig {
+        get { configHolder.value }
+        set { configHolder.value = newValue }
+    }
+    private var pullRequestTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var predictionTask: Task<Void, Never>?
     private var matrixTask: Task<Void, Never>?
@@ -77,15 +92,19 @@ public final class RepositoryModel {
     private var dailyTask: Task<Void, Never>?
 
     public init(repository: RegisteredRepository, git: GitClient = ProcessGitClient(), paths: SupportPaths = SupportPaths(),
-                defaults: UserDefaults = .standard) {
+                defaults: UserDefaults = .standard, github: GitHubCLI = GitHubCLI()) {
         self.repository = repository
         self.git = git
         self.paths = paths
         self.defaults = defaults
+        self.github = github
+        let holder = configHolder
+        self.sessions = SessionsModel(repository: repository, git: git, paths: paths, github: github) { holder.value }
         self.contentMode = defaults.string(forKey: "\(Self.contentModeKeyPrefix)\(repository.id.uuidString)")
             .flatMap(ContentMode.init(rawValue:)) ?? .branches
         self.predictionStore = PredictionStore(paths: paths, repositoryRoot: repository.url)
         self.digest = DailyRunner.latestDigest(repositoryRoot: repository.url, paths: paths)
+        sessions.onBranchesChanged = { [weak self] in self?.refresh() }
     }
 
     // MARK: - Derived
@@ -194,6 +213,7 @@ public final class RepositoryModel {
         inventoryState = .loaded(inventory)
         rebuildRows()
         loadPredictions(inventory)
+        loadPullRequests()
         if contentMode == .matrix { loadMatrix() } else { matrixState = .idle }
         // Keep the selection if the branch still exists; reload its detail (its tip may have moved).
         if let selected = selectedBranch {
@@ -202,6 +222,19 @@ public final class RepositoryModel {
             } else {
                 loadDetail()
             }
+        }
+    }
+
+    /// Best effort: without `gh` (or offline) the PR badges simply don't appear.
+    private func loadPullRequests() {
+        pullRequestTask?.cancel()
+        let github = self.github
+        let root = repository.url
+        pullRequestTask = Task { [weak self] in
+            guard await github.isAvailable(in: root), let list = try? await github.openPullRequests(in: root),
+                  !Task.isCancelled else { return }
+            self?.pullRequests = Dictionary(list.map { ($0.headRefName, $0) }, uniquingKeysWith: { first, _ in first })
+            self?.rebuildRows()
         }
     }
 
@@ -237,7 +270,7 @@ public final class RepositoryModel {
         rows = filter.apply(to: inventory, predictions: predictions)
             .map { branch in
                 BranchRow(branch, integrationNames: names, mergePrediction: firstIntegration?.prediction(for: branch.name),
-                          predictionsLoaded: predictions != nil)
+                          predictionsLoaded: predictions != nil, pullRequest: pullRequests[branch.name])
             }
             .sorted(using: sortOrder)
     }
@@ -264,4 +297,10 @@ public final class RepositoryModel {
             }
         }
     }
+}
+
+/// Reference box so the sessions model reads the repository's current config, not a copy from start-up.
+@MainActor
+final class ConfigHolder {
+    var value = RepoConfig.defaults
 }

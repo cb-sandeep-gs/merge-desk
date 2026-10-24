@@ -14,6 +14,7 @@ struct BranchesView: View {
             case .branches: content
             case .matrix: MatrixView(model: model)
             case .digest: DigestView(model: model)
+            case .merges: SessionsListView(sessions: model.sessions)
             }
             Divider()
             statusLine
@@ -22,6 +23,9 @@ struct BranchesView: View {
         .navigationSubtitle(model.repository.path)
         .searchable(text: $model.filter.searchText, placement: .toolbar, prompt: "Branch or author")
         .toolbar { toolbar }
+        .sheet(isPresented: $model.isMergeSheetPresented) {
+            if let source = model.selectedBranch { MergeSheet(model: model, source: source) }
+        }
     }
 
     private var modeBar: some View {
@@ -177,6 +181,12 @@ struct BranchesView: View {
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if model.contentMode == .branches { filterToolbar }
         ToolbarItem {
+            Button("Merge…", systemImage: Symbol.merge) { model.isMergeSheetPresented = true }
+                .disabled(model.selectedBranch == nil || model.inventory == nil)
+                .help("Merge the selected branch into another, in a separate worktree")
+                .accessibilityIdentifier(AccessibilityID.mergeButton)
+        }
+        ToolbarItem {
             Button("Refresh", systemImage: Symbol.refresh) { model.refresh() }
                 .keyboardShortcut("r")
                 .disabled(model.inventoryState.isLoading)
@@ -256,6 +266,7 @@ struct NoteBadges: View {
         case .merged: return .green
         case .neverPushed, .unpushed: return .purple
         case .toPull: return .secondary
+        case let .pullRequest(_, checks): return checks == .failing ? .red : .teal
         }
     }
 }

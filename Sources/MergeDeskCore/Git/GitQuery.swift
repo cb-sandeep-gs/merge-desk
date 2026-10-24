@@ -167,3 +167,38 @@ extension GitQuery where Output == [String] {
         }
     }
 }
+
+/// A worktree of the repository and what it has checked out.
+public struct WorktreeInfo: Sendable, Equatable {
+    public let path: String
+    public let headID: String?
+    /// Full ref of the checked-out branch; nil when detached.
+    public let branchRef: String?
+}
+
+extension GitQuery where Output == [WorktreeInfo] {
+    /// Every worktree (the main checkout first) — used to refuse moving a branch someone has checked out.
+    public static var worktrees: GitQuery<[WorktreeInfo]> {
+        GitQuery(name: "worktree list", arguments: ["worktree", "list", "--porcelain", "-z"]) { result in
+            GitOutputParser.parseWorktrees(result.standardOutput)
+        }
+    }
+}
+
+extension GitQuery where Output == String {
+    /// URL of a remote, e.g. `git@github.com:org/repo.git`.
+    public static func remoteURL(_ remote: String) -> GitQuery<String> {
+        GitQuery(name: "remote get-url", arguments: ["remote", "get-url", "--", remote]) { result in
+            GitOutputParser.trimmedLine(result.standardOutput)
+        }
+    }
+}
+
+extension GitQuery where Output == [String] {
+    /// Paths still unmerged in a worktree (conflicts not yet marked resolved with `git add`).
+    public static var unmergedPaths: GitQuery<[String]> {
+        GitQuery(name: "diff --diff-filter=U", arguments: ["diff", "--name-only", "--diff-filter=U", "-z"]) { result in
+            GitOutputParser.parsePathList(result.standardOutput)
+        }
+    }
+}

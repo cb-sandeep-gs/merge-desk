@@ -1,6 +1,6 @@
 # Merge Desk — branch dashboard, merge planner and history-aware conflict resolver
 
-**Status:** Plan v2 · MD-0 done (a43d051) · MD-1 done (a2ca999) · MD-2 implemented 2026-10-24 · **Date:** 2026-10-24 · **Owner:** Sandeep GS
+**Status:** Plan v2 · MD-0 done (a43d051) · MD-1 done (a2ca999) · MD-2 done (4b36614) · MD-3 implemented 2026-10-24 · **Date:** 2026-10-24 · **Owner:** Sandeep GS
 **Form:** standalone **native macOS app** + `mergedesk` CLI, in its **own repository**, usable on any Cricbuzz git repo.
 Mercury-iOSApp is the first adopter and the accuracy benchmark.
 
@@ -265,7 +265,7 @@ Each phase is usable on its own, tested, and committed separately.
 | **MD-0 Foundations** ✅ | New `merge-desk` repo, SPM layout, `GitClient`, `RepoConfig` + `.mergedesk.json` schema, fixture generator, AuditLog, CI | Fixture repos build; parser tests pass; CI green (CI runs once the GitHub remote exists) |
 | **MD-1 Inventory** ✅ | CLI `list/show`; app shell with repos sidebar + Branches table + filters + detail | On Mercury, all 77 refs match `git` for ahead/behind develop & main, merged, stale — verified 2026-10-24: 51 branches (77 refs minus origin/HEAD, local+remote folded), 123 comparisons, 0 mismatches |
 | **MD-2 Prediction + daily** ✅ | Predictor with cache, 3 views (vs develop, vs main, branch matrix), digest, login-item / launchd schedule, notifications, menu-bar extra | 20 sampled pairs match real `git merge` outcomes; digest appears at the set time — verified 2026-10-24: 20/20 Mercury pairs (8 conflicting + 4 clean integration merges, 5 conflicting + 3 clean branch pairs) identical file-for-file to real `git merge`; every fixture too. Mercury: 217 merges 3.5 s cold / 0.6 s warm. Schedule = per-user LaunchAgent running `MergeDesk --daily` (launchd, not SMAppService); live test 2026-10-24: agent set for 12:16 fired at 12:16 (runs = 1, exit 0), fetched Mercury + Lithium over SSH, wrote both digests, then removed |
-| **MD-3 Merge sessions** | Worktree sessions, state machine, backup refs, undo, confirmed push, PR route (`gh` or compare URL), `gh` adapter columns | Merge → undo restores exact sha; protected branch refuses direct push |
+| **MD-3 Merge sessions** ✅ | Worktree sessions, state machine, backup refs, undo, confirmed push, PR route (`gh` or compare URL), `gh` adapter columns | Merge → undo restores exact sha; protected branch refuses direct push — verified 2026-10-24 by tests on real git: undo restores the exact commit (backup ref kept), apply refuses a checked-out or moved target, a protected `develop` is never pushed and gets a `mergedesk/…` branch + compare-page PR (remote develop untouched). Strategies: merge commit and squash; rebase-onto deferred. `gh` not installed here: PR badges covered by parser tests only |
 | **MD-4 Tier 1 + 2** | regenerate, pbxproj, unionEntries, jsonKeys, escalate, rerere | Replay on Mercury: ≥ 99% exact, 0 wrong on these classes |
 | **MD-5 Tier 3 history engine** | `-L`/blame evidence, patch-id / cherry / revert detection, add-only union, classifier, confidence | Replay: "High" ≥ 99% exact; evidence shown per hunk |
 | **MD-6 Workbench + verification** | 3-pane workbench, editor hand-off, verification gate, commit message generation | A real multi-file conflict resolved end-to-end and passes the gate |
