@@ -21,6 +21,8 @@ jobs:
         run: |
           swift --version
           git --version
+          # Annotations are public (job logs need admin rights): record the toolchain there too.
+          echo "::notice title=Toolchain::$(swift --version 2>&1 | head -1)"
 
       - name: Lint
         run: |
@@ -28,7 +30,13 @@ jobs:
           swiftlint lint --strict
 
       - name: Build
-        run: swift build
+        run: |
+          # On failure, surface the compiler errors as annotations so they're readable without log access.
+          set -o pipefail
+          if ! swift build 2>&1 | tee build.log; then
+            grep -E "error:" build.log | head -20 | while IFS= read -r line; do echo "::error title=Build::${line}"; done
+            exit 1
+          fi
 
       - name: Test
         run: swift test --parallel

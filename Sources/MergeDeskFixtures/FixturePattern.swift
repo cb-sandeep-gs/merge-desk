@@ -292,22 +292,27 @@ public enum XcodeProjectText {
         }
         let children = files.map { "\t\t\t\t\($0.referenceID) /* \($0.name) */," }
         let sources = files.map { "\t\t\t\t\($0.buildID) /* \($0.name) in Sources */," }
-        let lines: [String] = [
-            "// !$*UTF8*$!", "{", "\tarchiveVersion = 1;", "\tclasses = {", "\t};", "\tobjectVersion = 56;", "\tobjects = {", "",
-            "/* Begin PBXBuildFile section */"] + buildFiles + ["/* End PBXBuildFile section */", "",
-            "/* Begin PBXFileReference section */"] + references + ["/* End PBXFileReference section */", "",
-            "/* Begin PBXGroup section */", "\t\tC10000000000000000000001 = {", "\t\t\tisa = PBXGroup;",
-            "\t\t\tchildren = ("] + children + [
-            "\t\t\t);", "\t\t\tsourceTree = \"<group>\";", "\t\t};", "/* End PBXGroup section */", "",
-            "/* Begin PBXSourcesBuildPhase section */", "\t\tD10000000000000000000001 /* Sources */ = {",
-            "\t\t\tisa = PBXSourcesBuildPhase;", "\t\t\tbuildActionMask = 2147483647;", "\t\t\tfiles = ("] + sources + [
-            "\t\t\t);", "\t\t\trunOnlyForDeploymentPostprocessing = 0;", "\t\t};", "/* End PBXSourcesBuildPhase section */", "",
-            "/* Begin XCBuildConfiguration section */", "\t\tE10000000000000000000001 /* Debug */ = {",
-            "\t\t\tisa = XCBuildConfiguration;", "\t\t\tbuildSettings = {",
-            "\t\t\t\tCURRENT_PROJECT_VERSION = \(buildNumber);", "\t\t\t\tSWIFT_VERSION = 5.0;", "\t\t\t};",
-            "\t\t\tname = Debug;", "\t\t};", "/* End XCBuildConfiguration section */",
-            "\t};", "\trootObject = C10000000000000000000001;", "}",
-        ]
+        // Appended step by step: one long `+` chain of array literals is too slow for older Swift type checkers.
+        var lines = ["// !$*UTF8*$!", "{", "\tarchiveVersion = 1;", "\tclasses = {", "\t};", "\tobjectVersion = 56;",
+                     "\tobjects = {", ""]
+        lines.append("/* Begin PBXBuildFile section */")
+        lines.append(contentsOf: buildFiles)
+        lines.append(contentsOf: ["/* End PBXBuildFile section */", "", "/* Begin PBXFileReference section */"])
+        lines.append(contentsOf: references)
+        lines.append(contentsOf: ["/* End PBXFileReference section */", "", "/* Begin PBXGroup section */",
+                                  "\t\tC10000000000000000000001 = {", "\t\t\tisa = PBXGroup;", "\t\t\tchildren = ("])
+        lines.append(contentsOf: children)
+        lines.append(contentsOf: ["\t\t\t);", "\t\t\tsourceTree = \"<group>\";", "\t\t};", "/* End PBXGroup section */", "",
+                                  "/* Begin PBXSourcesBuildPhase section */", "\t\tD10000000000000000000001 /* Sources */ = {",
+                                  "\t\t\tisa = PBXSourcesBuildPhase;", "\t\t\tbuildActionMask = 2147483647;", "\t\t\tfiles = ("])
+        lines.append(contentsOf: sources)
+        lines.append(contentsOf: ["\t\t\t);", "\t\t\trunOnlyForDeploymentPostprocessing = 0;", "\t\t};",
+                                  "/* End PBXSourcesBuildPhase section */", "", "/* Begin XCBuildConfiguration section */",
+                                  "\t\tE10000000000000000000001 /* Debug */ = {", "\t\t\tisa = XCBuildConfiguration;",
+                                  "\t\t\tbuildSettings = {",
+                                  "\t\t\t\tCURRENT_PROJECT_VERSION = \(buildNumber);", "\t\t\t\tSWIFT_VERSION = 5.0;", "\t\t\t};",
+                                  "\t\t\tname = Debug;", "\t\t};", "/* End XCBuildConfiguration section */",
+                                  "\t};", "\trootObject = C10000000000000000000001;", "}"])
         return lines.joined(separator: "\n") + "\n"
     }
 }
