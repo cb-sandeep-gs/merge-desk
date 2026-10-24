@@ -116,6 +116,9 @@ public enum ConfigLoader {
             let range = "\(staleDaysRange.lowerBound) and \(staleDaysRange.upperBound)"
             issues.append(.init(.error, field: "staleDays", "must be between \(range)"))
         }
+        if config.driftBehindThreshold < 1 {
+            issues.append(.init(.error, field: "driftBehindThreshold", "must be at least 1"))
+        }
         for (index, prefix) in config.activeBranchPrefixes.enumerated() where prefix.isEmpty {
             issues.append(.init(.error, field: "activeBranchPrefixes[\(index)]", "prefix is empty"))
         }

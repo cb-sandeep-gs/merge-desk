@@ -42,6 +42,10 @@
       "type": "integer", "minimum": 1, "maximum": 3650, "default": 21,
       "description": "Days without a commit after which a branch counts as stale."
     },
+    "driftBehindThreshold": {
+      "type": "integer", "minimum": 1, "default": 50,
+      "description": "An active branch this many commits behind the first integration branch is listed as drifting in the daily digest."
+    },
     "activeBranchPrefixes": {
       "type": "array", "items": { "type": "string", "minLength": 1 }, "default": [],
       "description": "Prefixes of active-work branches for the branch × branch matrix; empty = every non-integration branch."

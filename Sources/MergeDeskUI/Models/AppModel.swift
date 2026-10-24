@@ -21,11 +21,14 @@ public final class AppModel {
 
     private let registry: RepositoryRegistry
     private let git: GitClient
-    /// One model per repository, so switching back keeps filters, sort and selection.
-    private var models: [RegisteredRepository.ID: RepositoryModel] = [:]
+    private let paths: SupportPaths
+    /// One model per repository, so switching back keeps filters, sort and selection. Not observed: it is a
+    /// cache filled lazily (also while views render); each model is observable on its own.
+    @ObservationIgnored private var models: [RegisteredRepository.ID: RepositoryModel] = [:]
 
-    public init(registry: RepositoryRegistry = RepositoryRegistry(), git: GitClient = ProcessGitClient()) {
-        self.registry = registry
+    public init(paths: SupportPaths = SupportPaths(), git: GitClient = ProcessGitClient()) {
+        self.registry = RepositoryRegistry(paths: paths, git: git)
+        self.paths = paths
         self.git = git
         do {
             repositories = try registry.load()
@@ -42,7 +45,7 @@ public final class AppModel {
 
     public func model(for repository: RegisteredRepository) -> RepositoryModel {
         if let existing = models[repository.id] { return existing }
-        let model = RepositoryModel(repository: repository, git: git)
+        let model = RepositoryModel(repository: repository, git: git, paths: paths)
         models[repository.id] = model
         return model
     }
@@ -66,6 +69,31 @@ public final class AppModel {
             if selectedRepositoryID == id { selectedRepositoryID = repositories.first?.id }
         } catch {
             alertMessage = ErrorText.message(error)
+        }
+    }
+
+    // MARK: - Daily
+
+    /// Latest digest per repository, for the menu bar.
+    public var digests: [(repository: RegisteredRepository, digest: DailyDigest?)] {
+        repositories.map { ($0, model(for: $0).digest) }
+    }
+
+    /// New conflicts across all repositories in their latest digests (the menu-bar badge).
+    public var newConflictCount: Int {
+        digests.reduce(0) { $0 + ($1.digest?.newConflicts.count ?? 0) }
+    }
+
+    public var isRunningDaily: Bool {
+        repositories.contains { model(for: $0).isRunningDaily }
+    }
+
+    /// Runs the daily job for every repository (menu bar "Run Daily Now"), one after another.
+    public func runDailyForAll() async {
+        for repository in repositories {
+            let model = model(for: repository)
+            model.runDaily()
+            await model.waitForDaily()
         }
     }
 }

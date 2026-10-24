@@ -39,7 +39,12 @@ struct ListCommand: AsyncParsableCommand {
     func run() async throws {
         let context = try await InventoryContext.load(repository)
         let filter = BranchFilter(scope: filter, searchText: search, prefix: prefix)
-        let inventory = context.inventory.filtered(by: filter)
+        // Only the will-conflict scope needs predictions (integration only; cached on disk after the first run).
+        let predictions = filter.scope == .willConflict
+            ? try await Predictor(store: PredictionStore(paths: SupportPaths(), repositoryRoot: context.root))
+                .predict(inventory: context.inventory, config: context.config, repositoryRoot: context.root, scope: .integration)
+            : nil
+        let inventory = context.inventory.filtered(by: filter, predictions: predictions)
         if json {
             print(String(decoding: try OutputJSON.encode(inventory), as: UTF8.self))
             return

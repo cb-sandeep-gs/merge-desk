@@ -4,9 +4,10 @@ A macOS app and CLI for any Cricbuzz git repository. It lists every branch with 
 before anyone merges, runs merges safely, and resolves conflicts from file-type rules and **git history** — with
 evidence and a confidence score for every decision.
 
-> **Status: MD-1 (branch inventory).** The app lists every branch of any repository with ahead/behind against the
-> integration branches, staleness, merge state, unpushed work, and per-branch commits, files and overlapping
-> branches. Conflict prediction, merging and resolution arrive in MD-2 → MD-8 — see [docs/PLAN.md](docs/PLAN.md).
+> **Status: MD-2 (conflict prediction + daily digest).** Every branch's merge into each integration branch and
+> every pair of active branches is predicted with `git merge-tree` (nothing checked out), cached by commit id, and
+> summarised in a daily digest with notifications. Merging and resolution arrive in MD-3 → MD-8 — see
+> [docs/PLAN.md](docs/PLAN.md).
 
 ## Requirements
 
@@ -32,19 +33,38 @@ Add a repository with **+** (any folder inside a clone; the folder is never modi
   author, ahead/behind against the first two integration branches, and badges (Integration, Protected, Stale,
   Merged, Never pushed, N unpushed, N to pull). Filter with **All · Mine · Active · Stale · Merged · Unpushed**, a
   branch-name prefix, or search by branch or author; click a column to sort; ⌘R refreshes.
-- **Detail** — the selected branch's commits not yet in the integration branch, files changed since it forked, and
+- **Conflict Matrix** — active branches × active branches; each cell is the number of files that would conflict
+  if the two were merged (click for the files and how each would be resolved). Up to 40 most recent active branches.
+- **Daily Digest** — what needs attention today: your branches to rebase, new and resolved conflicts since the last
+  run, every predicted conflict with each integration branch and between branches, drifting, stale and merged
+  branches. **Fetch & Run Now** runs it on demand.
+- **Detail** — the selected branch's predicted merges (with how each conflicting file would be resolved), commits not yet in the integration branch, files changed since it forked, and
   other active branches that changed the same files *since the two diverged* (measured from each pair's own merge
   base, so commits both already share don't count).
 
+The Branches table's **Merge → develop** column shows each branch's predicted merge ("clean", "3 files (1 auto)",
+"merged"); **Will conflict** filters to those that conflict. "auto" = a file rule in `.mergedesk.json` resolves it
+(e.g. `pbxproj`, `regenerate`); the rest go to the history engine (MD-5) or a person.
+
+**Daily run.** Settings ▸ Daily run schedules the digest (default 09:30) as a per-user LaunchAgent that runs
+`MergeDesk --daily`: it fetches every added repository, predicts every merge, writes the digest and sends a macOS
+notification only when something is new or needs you. A Mac asleep at that time runs it on wake. The menu-bar
+icon shows the latest digests. From the command line: `mergedesk schedule --at 09:30` (runs `mergedesk daily --all`).
+Digests are saved as Markdown in `~/Library/Application Support/MergeDesk/repos/<repo>/digests/`.
+
 Comparisons use the **primary remote's copy** of each branch (what the team sees); local-only commits show as
-"unpushed". Run `git fetch` first to see your team's latest pushes — Merge Desk itself never fetches or writes
-(fetching becomes part of the daily run in MD-2). `MERGEDESK_SUPPORT_DIR=/some/folder` points the app and CLI
+"unpushed". Browsing never fetches; the daily run (and **Fetch & Run Now**) runs `git fetch --prune`, which only
+updates remote-tracking refs. Nothing ever merges, pushes or touches the working tree. `MERGEDESK_SUPPORT_DIR=/some/folder` points the app and CLI
 at another support folder (demos, testing).
 
 | Command | What it does |
 |---|---|
 | `mergedesk list [--filter SCOPE] [--search TEXT] [--prefix P] [--json]` | Branches with ahead/behind, staleness and notes |
 | `mergedesk show BRANCH [--max-commits N] [--max-files N] [--json]` | One branch: copies, comparisons, commits, files, overlaps |
+| `mergedesk predict [--integration-only] [--json]` | Predicted conflicts vs integration branches and between active branches |
+| `mergedesk daily [--all] [--no-fetch] [--no-notify]` | Fetch, predict, write today's digest, notify if something is new |
+| `mergedesk digest` | Print the latest digest |
+| `mergedesk schedule --at HH:MM \| --remove \| --run-now` | Install/remove the daily LaunchAgent, or run it now |
 | `mergedesk version` | Merge Desk and git versions |
 | `mergedesk doctor [--repo PATH]` | Checks git, the repository, its `.mergedesk.json` and that the integration branches exist |
 | `mergedesk config validate [--repo PATH \| --file PATH]` | Validates a config; exits 1 on errors, prints warnings |
@@ -61,6 +81,8 @@ Sources/
     Git/                GitClient (the only code that runs git), GitQuery (command + parser pairs), parsers, models
     Config/             RepoConfig (.mergedesk.json), ConfigLoader (decode + validate), GlobPattern
     Inventory/          InventoryBuilder, BranchRecord, BranchFilter, BranchDetailLoader, ComparisonCache
+    Prediction/         Predictor (git merge-tree), PredictionStore (disk cache), prediction models
+    Daily/              DailyRunner, DigestBuilder + DigestMarkdown, DailySchedule (LaunchAgent), notifiers
     Storage/            AuditLog (append-only JSONL), RepositoryRegistry, SupportPaths (~/Library/Application Support/MergeDesk)
   MergeDeskFixtures/    scripted, deterministic git repositories: conflict patterns + an origin/clone inventory fixture
   MergeDeskUI/          @Observable view models (AppModel, RepositoryModel) and SwiftUI views
@@ -86,6 +108,7 @@ see [docs/mergedesk.schema.json](docs/mergedesk.schema.json) and the
 | `primaryRemote` | `"origin"` | Remote whose tips are compared (the team's shared state) |
 | `protectedBranches` | `["main", "develop", "release/*"]` | Only changed through a pull request |
 | `staleDays` | `21` | Days without commits before a branch is stale |
+| `driftBehindThreshold` | `50` | Commits behind the first integration branch before the digest says "drifting" |
 | `activeBranchPrefixes` | `[]` (all) | Branches in the branch × branch conflict matrix |
 | `fileClasses` | pbxproj → `pbxproj`, Package.resolved → `escalate` | First matching glob picks the Tier-1 strategy |
 | `regenerateCommand` | none | Run after `regenerate` files are taken; required if any rule uses it |

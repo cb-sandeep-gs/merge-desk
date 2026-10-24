@@ -100,6 +100,8 @@ public struct RepoConfig: Codable, Sendable, Equatable {
     public var protectedBranches: [GlobPattern]
     /// Days without a commit after which a branch counts as stale.
     public var staleDays: Int
+    /// An active branch this many commits behind the first integration branch is "drifting" in the daily digest.
+    public var driftBehindThreshold: Int
     /// Prefixes of "active work" branches for the branch × branch matrix; empty = every non-integration branch.
     public var activeBranchPrefixes: [String]
     public var fileClasses: [FileClassRule]
@@ -115,6 +117,7 @@ public struct RepoConfig: Codable, Sendable, Equatable {
         primaryRemote: String,
         protectedBranches: [GlobPattern],
         staleDays: Int,
+        driftBehindThreshold: Int,
         activeBranchPrefixes: [String],
         fileClasses: [FileClassRule],
         regenerateCommand: [String]?,
@@ -126,6 +129,7 @@ public struct RepoConfig: Codable, Sendable, Equatable {
         self.primaryRemote = primaryRemote
         self.protectedBranches = protectedBranches
         self.staleDays = staleDays
+        self.driftBehindThreshold = driftBehindThreshold
         self.activeBranchPrefixes = activeBranchPrefixes
         self.fileClasses = fileClasses
         self.regenerateCommand = regenerateCommand
@@ -141,6 +145,7 @@ public struct RepoConfig: Codable, Sendable, Equatable {
         primaryRemote: "origin",
         protectedBranches: ["main", "develop", "release/*"].map { GlobPattern(staticPattern: $0) },
         staleDays: 21,
+        driftBehindThreshold: 50,
         activeBranchPrefixes: [],
         fileClasses: [
             FileClassRule(glob: GlobPattern(staticPattern: "**/*.pbxproj"), strategy: .pbxproj),
@@ -153,7 +158,7 @@ public struct RepoConfig: Codable, Sendable, Equatable {
 
     /// Keys this version understands; anything else in the file is reported as a warning (likely a typo).
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case schemaVersion, integrationBranches, primaryRemote, protectedBranches, staleDays, activeBranchPrefixes
+        case schemaVersion, integrationBranches, primaryRemote, protectedBranches, staleDays, driftBehindThreshold, activeBranchPrefixes
         case fileClasses, regenerateCommand, verifyCommands, autoApplyMinConfidence
     }
 
@@ -165,6 +170,8 @@ public struct RepoConfig: Codable, Sendable, Equatable {
         primaryRemote = try container.decodeIfPresent(String.self, forKey: .primaryRemote) ?? fallback.primaryRemote
         protectedBranches = try container.decodeIfPresent([GlobPattern].self, forKey: .protectedBranches) ?? fallback.protectedBranches
         staleDays = try container.decodeIfPresent(Int.self, forKey: .staleDays) ?? fallback.staleDays
+        driftBehindThreshold = try container.decodeIfPresent(Int.self, forKey: .driftBehindThreshold)
+            ?? fallback.driftBehindThreshold
         activeBranchPrefixes = try container.decodeIfPresent([String].self, forKey: .activeBranchPrefixes) ?? fallback.activeBranchPrefixes
         fileClasses = try container.decodeIfPresent([FileClassRule].self, forKey: .fileClasses) ?? fallback.fileClasses
         regenerateCommand = try container.decodeIfPresent([String].self, forKey: .regenerateCommand) ?? fallback.regenerateCommand

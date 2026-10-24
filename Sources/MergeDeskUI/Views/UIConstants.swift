@@ -8,6 +8,13 @@ public enum AccessibilityID {
     public static let scopePicker = "branches.scope"
     public static let prefixMenu = "branches.prefix"
     public static let refresh = "branches.refresh"
+    public static let contentMode = "content.mode"
+    public static let matrix = "matrix.grid"
+    public static let matrixPair = "matrix.pair"
+    public static let digest = "digest.view"
+    public static let runDaily = "digest.run"
+    public static let detailPredictions = "branch.detail.predictions"
+    public static let scheduleToggle = "settings.schedule.toggle"
     public static let statusLine = "branches.status"
     public static let detail = "branch.detail"
     public static let detailCommits = "branch.detail.commits"
@@ -26,20 +33,33 @@ public enum Layout {
     static let sidebarMinWidth: CGFloat = 180
     static let sidebarIdealWidth: CGFloat = 220
     static let tableMinWidth: CGFloat = 520
-    static let detailMinWidth: CGFloat = 320
-    static let detailIdealWidth: CGFloat = 360
+    static let detailMinWidth: CGFloat = 300
+    static let detailIdealWidth: CGFloat = 320
     /// Capped so the table keeps room for all seven columns.
     static let detailMaxWidth: CGFloat = 480
     static let tableIdealWidth: CGFloat = 860
     static let branchColumnMin: CGFloat = 180
-    static let branchColumnIdeal: CGFloat = 220
+    static let branchColumnIdeal: CGFloat = 200
     static let branchColumnMax: CGFloat = 420
     static let notesColumnMin: CGFloat = 100
-    static let notesColumnIdeal: CGFloat = 180
-    static let whereColumnIdeal: CGFloat = 60
-    static let dateColumnIdeal: CGFloat = 90
-    static let authorColumnIdeal: CGFloat = 110
-    static let comparisonColumnIdeal: CGFloat = 84
+    static let notesColumnIdeal: CGFloat = 120
+    static let whereColumnIdeal: CGFloat = 56
+    static let dateColumnIdeal: CGFloat = 86
+    static let authorColumnIdeal: CGFloat = 100
+    static let comparisonColumnIdeal: CGFloat = 76
+    static let mergeColumnIdeal: CGFloat = 96
+    static let matrixCellSize: CGFloat = 26
+    static let matrixLabelWidth: CGFloat = 240
+    static let matrixNumberWidth: CGFloat = 24
+    static let matrixCornerRadius: CGFloat = 3
+    /// Conflicted-file counts at which a matrix cell turns from light to medium to strong.
+    static let matrixMediumThreshold = 3
+    static let matrixStrongThreshold = 10
+    static let matrixLightOpacity = 0.3
+    static let matrixMediumOpacity = 0.6
+    static let matrixStrongOpacity = 0.9
+    static let settingsWidth: CGFloat = 460
+    static let menuBarDigestLimit = 5
     static let narrowColumnMin: CGFloat = 56
     static let sectionSpacing: CGFloat = 16
     static let rowSpacing: CGFloat = 4
@@ -62,4 +82,17 @@ enum Symbol {
     static let revealInFinder = "magnifyingglass"
     static let remove = "minus.circle"
     static let prefix = "line.3.horizontal.decrease.circle"
+    static let merge = "arrow.triangle.merge"
+    static let clean = "checkmark.circle"
+    static let conflict = "exclamationmark.octagon"
+    static let digest = "newspaper"
+    static let schedule = "clock"
+}
+
+/// Semantic colours (system colours adapt to light/dark mode).
+enum Palette {
+    static let conflict = Color.orange
+    static let clean = Color.green
+    static let matrixDiagonal = Color.secondary.opacity(0.15)
+    static let matrixEmpty = Color.secondary.opacity(0.06)
 }

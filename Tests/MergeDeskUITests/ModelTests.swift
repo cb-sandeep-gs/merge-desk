@@ -93,6 +93,69 @@ final class RepositoryModelTests: XCTestCase {
         XCTAssertEqual(model.rows.count, 6)
     }
 
+    private func isolatedModel(_ root: URL) -> RepositoryModel {
+        RepositoryModel(repository: RegisteredRepository(path: root.path), git: git,
+                        paths: SupportPaths(root: folder.appendingPathComponent("support")))
+    }
+
+    func testPredictionsFillTheMergeColumnAndWillConflictFilter() async throws {
+        let model = isolatedModel(fixture.clone)
+        model.refresh(now: InventoryFixture.now)
+        await model.waitForRefresh()
+        XCTAssertNotNil(model.predictions, model.predictionState.errorMessage ?? "")
+        let active = try XCTUnwrap(model.rows.first { $0.name == Branch.active })
+        XCTAssertEqual(active.merge.text, "clean")
+        XCTAssertEqual(model.rows.first { $0.name == Branch.merged }?.merge.text, "merged")
+        XCTAssertEqual(model.rows.first { $0.name == Branch.develop }?.merge.text, BranchRow.missingValue)
+        model.filter.scope = .willConflict
+        XCTAssertEqual(model.rows, [], "nothing conflicts with develop in this fixture")
+    }
+
+    func testWillConflictWithARealConflict() async throws {
+        let conflict = try await FixtureBuilder().build(.contentConflict, in: folder)
+        var config = RepoConfig.defaults
+        config.integrationBranches = [conflict.definition.targetBranch]
+        config.staleDays = 3650
+        try JSONEncoder().encode(config).write(to: conflict.url.appendingPathComponent(MergeDeskConstants.configFileName))
+        let model = isolatedModel(conflict.url)
+        model.refresh()
+        await model.waitForRefresh()
+        model.filter.scope = .willConflict
+        XCTAssertEqual(model.rows.map(\.name), [conflict.definition.sourceBranch])
+        XCTAssertEqual(model.rows.first?.merge.text, "1 file")
+        model.selectedBranch = conflict.definition.sourceBranch
+        XCTAssertEqual(model.selectedBranchPredictions.first?.prediction.prediction?.conflicts.map(\.path), ["Sources/App.swift"])
+    }
+
+    func testMatrixLoadsWhenShown() async throws {
+        let model = isolatedModel(fixture.clone)
+        model.refresh(now: InventoryFixture.now)
+        await model.waitForRefresh()
+        XCTAssertNil(model.matrixState.value, "the matrix is computed only when shown")
+        model.contentMode = .matrix
+        await model.waitForMatrix()
+        let matrix = try XCTUnwrap(model.matrixState.value?.matrix)
+        XCTAssertEqual(matrix.conflictingPairs.map { "\($0.first) ↔ \($0.second)" }, ["\(Branch.active) ↔ \(Branch.remoteOnly)"])
+    }
+
+    func testRunDailyWritesADigestAndReloads() async throws {
+        let model = isolatedModel(fixture.clone)
+        XCTAssertNil(model.digest)
+        model.refresh(now: InventoryFixture.now)
+        await model.waitForRefresh()
+        model.runDaily(fetch: true, now: InventoryFixture.now)
+        XCTAssertTrue(model.isRunningDaily)
+        await model.waitForDaily()
+        XCTAssertFalse(model.isRunningDaily)
+        XCTAssertNil(model.dailyError)
+        XCTAssertEqual(model.digest?.fetch, .fetched)
+        XCTAssertEqual(model.digest?.pairConflicts.count, 1)
+        XCTAssertNotNil(model.inventory)
+
+        let reopened = isolatedModel(fixture.clone)
+        XCTAssertEqual(reopened.digest, model.digest, "the digest is read back from the support folder")
+    }
+
     func testNonRepositoryShowsAnError() async throws {
         let plain = folder.appendingPathComponent("plain", isDirectory: true)
         try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
@@ -127,9 +190,9 @@ final class AppModelTests: XCTestCase {
         try? FileManager.default.removeItem(at: folder)
     }
 
-    private func registry() -> RepositoryRegistry {
-        RepositoryRegistry(paths: SupportPaths(root: folder.appendingPathComponent("support")),
-                           git: ProcessGitClient(environmentOverrides: FixtureBuilder.isolatedEnvironment))
+    private func makeApp() -> AppModel {
+        AppModel(paths: SupportPaths(root: folder.appendingPathComponent("support")),
+                 git: ProcessGitClient(environmentOverrides: FixtureBuilder.isolatedEnvironment))
     }
 
     func testAddSelectPersistAndRemove() async throws {
@@ -137,7 +200,7 @@ final class AppModelTests: XCTestCase {
         let subfolder = repository.url.appendingPathComponent("sub", isDirectory: true)
         try FileManager.default.createDirectory(at: subfolder, withIntermediateDirectories: true)
 
-        let app = AppModel(registry: registry())
+        let app = makeApp()
         XCTAssertEqual(app.repositories, [])
         await app.addRepository(at: subfolder)
         XCTAssertNil(app.alertMessage)
@@ -149,7 +212,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(app.alertMessage?.contains("already") ?? false)
         app.alertMessage = nil
 
-        let reopened = AppModel(registry: registry())
+        let reopened = makeApp()
         XCTAssertEqual(reopened.repositories, app.repositories, "the list survives a restart")
         XCTAssertEqual(reopened.selectedRepositoryID, app.repositories.first?.id)
 
@@ -161,7 +224,7 @@ final class AppModelTests: XCTestCase {
     }
 
     func testAddingANonRepositoryAlerts() async throws {
-        let app = AppModel(registry: registry())
+        let app = makeApp()
         await app.addRepository(at: folder)
         XCTAssertTrue(app.alertMessage?.contains("not inside a git repository") ?? false, app.alertMessage ?? "")
         XCTAssertEqual(app.repositories, [])
@@ -170,7 +233,7 @@ final class AppModelTests: XCTestCase {
     func testModelsArePerRepositoryAndReused() async throws {
         let first = try await FixtureBuilder().build(.cleanMerge, in: folder)
         let second = try await FixtureBuilder().build(.contentConflict, in: folder)
-        let app = AppModel(registry: registry())
+        let app = makeApp()
         await app.addRepository(at: first.url)
         await app.addRepository(at: second.url)
         let firstID = try XCTUnwrap(app.repositories.first?.id)
@@ -178,6 +241,30 @@ final class AppModelTests: XCTestCase {
         app.selectedRepositoryID = firstID
         app.selectedRepositoryID = app.repositories.last?.id
         XCTAssertTrue(app.selectedModel === model, "switching back keeps the same model (filters, selection)")
+    }
+}
+
+final class ScheduleModelTests: XCTestCase {
+    @MainActor
+    func testEnableDisableWithoutLaunchd() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("mergedesk-schedule-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let schedule = DailySchedule(launchAgentsFolder: folder, paths: SupportPaths(root: folder), usesLaunchctl: false)
+        let model = ScheduleModel(schedule: schedule, executablePath: "/Applications/MergeDesk.app/Contents/MacOS/MergeDesk")
+        XCTAssertFalse(model.isEnabled)
+        XCTAssertEqual(model.time, .defaultDailyRun)
+        model.time = try XCTUnwrap(DailyTime("08:15"))
+        await model.enable()
+        XCTAssertTrue(model.isEnabled)
+        XCTAssertEqual(model.installed?.programArguments,
+                       ["/Applications/MergeDesk.app/Contents/MacOS/MergeDesk", ScheduleModel.dailyArgument])
+        XCTAssertFalse(model.pointsElsewhere)
+        let moved = ScheduleModel(schedule: schedule, executablePath: "/elsewhere/MergeDesk")
+        XCTAssertTrue(moved.pointsElsewhere)
+        XCTAssertEqual(moved.time.description, "08:15", "the picker shows the installed time")
+        await model.disable()
+        XCTAssertFalse(model.isEnabled)
+        XCTAssertNil(model.errorMessage)
     }
 }
 

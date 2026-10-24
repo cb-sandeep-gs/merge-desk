@@ -1,14 +1,20 @@
 import MergeDeskCore
 import SwiftUI
 
-/// The Branches table with its filter bar, status line and loading / empty / error states.
+/// The middle pane: Branches table, Conflict Matrix or Daily Digest, with banners and a status line.
 struct BranchesView: View {
     @Bindable var model: RepositoryModel
 
     var body: some View {
         VStack(spacing: 0) {
+            modeBar
+            Divider()
             banners
-            content
+            switch model.contentMode {
+            case .branches: content
+            case .matrix: MatrixView(model: model)
+            case .digest: DigestView(model: model)
+            }
             Divider()
             statusLine
         }
@@ -16,6 +22,21 @@ struct BranchesView: View {
         .navigationSubtitle(model.repository.path)
         .searchable(text: $model.filter.searchText, placement: .toolbar, prompt: "Branch or author")
         .toolbar { toolbar }
+    }
+
+    private var modeBar: some View {
+        HStack {
+            Picker("View", selection: $model.contentMode) {
+                ForEach(ContentMode.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .accessibilityIdentifier(AccessibilityID.contentMode)
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, Layout.rowSpacing * 2)
     }
 
     // MARK: - States
@@ -88,6 +109,13 @@ struct BranchesView: View {
                 Text(row.second.text).monospacedDigit()
             }
             .width(min: Layout.narrowColumnMin, ideal: Layout.comparisonColumnIdeal)
+            TableColumn(Self.mergeTitle(names.first), value: \.mergeSortKey) { row in
+                Text(row.merge.text)
+                    .monospacedDigit()
+                    .foregroundStyle(row.merge.hasConflicts ? Palette.conflict : .secondary)
+                    .help("Predicted with git merge-tree: files that would conflict, and how many a file rule resolves automatically")
+            }
+            .width(min: Layout.narrowColumnMin, ideal: Layout.mergeColumnIdeal)
             TableColumn("Notes") { row in
                 NoteBadges(notes: row.notes, compact: true)
             }
@@ -98,6 +126,10 @@ struct BranchesView: View {
 
     private static func comparisonTitle(_ integration: String?) -> String {
         integration.map { "vs \($0)" } ?? BranchRow.missingValue
+    }
+
+    private static func mergeTitle(_ integration: String?) -> String {
+        integration.map { "Merge → \($0)" } ?? BranchRow.missingValue
     }
 
     // MARK: - Chrome
@@ -120,6 +152,7 @@ struct BranchesView: View {
                 Text("ago")
             }
             Spacer()
+            predictionStatus
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -129,7 +162,30 @@ struct BranchesView: View {
         .accessibilityIdentifier(AccessibilityID.statusLine)
     }
 
+    @ViewBuilder private var predictionStatus: some View {
+        switch model.predictionState {
+        case .idle: EmptyView()
+        case .loading: Text("Predicting merges…")
+        case let .failed(message): Text("Prediction failed: \(message)").foregroundStyle(Palette.conflict)
+        case let .loaded(report):
+            if let first = report.integration.first {
+                Text("\(first.conflicting.count) will conflict with \(first.integration)")
+            }
+        }
+    }
+
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        if model.contentMode == .branches { filterToolbar }
+        ToolbarItem {
+            Button("Refresh", systemImage: Symbol.refresh) { model.refresh() }
+                .keyboardShortcut("r")
+                .disabled(model.inventoryState.isLoading)
+                .help("Re-read branches and predictions (⌘R). Run the daily digest or git fetch to see new remote work.")
+                .accessibilityIdentifier(AccessibilityID.refresh)
+        }
+    }
+
+    @ToolbarContentBuilder private var filterToolbar: some ToolbarContent {
         ToolbarItem {
             Picker("Show", selection: $model.filter.scope) {
                 ForEach(BranchFilter.Scope.allCases, id: \.self) { scope in
@@ -138,7 +194,7 @@ struct BranchesView: View {
             }
             .pickerStyle(.segmented)
             .help("Mine: your last commit · Active: unmerged, recent · Stale: no commits for a while · "
-                  + "Merged: safe to delete · Unpushed: commits only on this Mac")
+                  + "Merged: safe to delete · Unpushed: commits only on this Mac · Will conflict: with the first integration branch")
             .accessibilityIdentifier(AccessibilityID.scopePicker)
         }
         ToolbarItem {
@@ -153,13 +209,6 @@ struct BranchesView: View {
             }
             .help("Only branches starting with a prefix")
             .accessibilityIdentifier(AccessibilityID.prefixMenu)
-        }
-        ToolbarItem {
-            Button("Refresh", systemImage: Symbol.refresh) { model.refresh() }
-                .keyboardShortcut("r")
-                .disabled(model.inventoryState.isLoading)
-                .help("Re-read branches (⌘R). Run git fetch first to see new remote work.")
-                .accessibilityIdentifier(AccessibilityID.refresh)
         }
     }
 }

@@ -15,7 +15,63 @@ public struct BranchRow: Identifiable, Sendable, Equatable {
     /// further integration branches appear in the detail pane).
     public let first: ComparisonCell
     public let second: ComparisonCell
+    /// Predicted merge into the first integration branch.
+    public let merge: MergeCell
     public let notes: [BranchNote]
+
+    /// "clean", "3 files (2 auto)", "merged", or "…" while predictions load.
+    public struct MergeCell: Sendable, Equatable {
+        public let state: MergeState
+
+        public var text: String {
+            switch state {
+            case .pending: return "…"
+            case .notApplicable: return BranchRow.missingValue
+            case .alreadyMerged: return "merged"
+            case .clean: return "clean"
+            case let .conflicts(total, automatic):
+                let files = total == 1 ? "1 file" : "\(total) files"
+                return automatic > 0 ? "\(files) (\(automatic) auto)" : files
+            }
+        }
+
+        public var hasConflicts: Bool {
+            if case .conflicts = state { return true }
+            return false
+        }
+
+        /// Conflicts that need a person first (most manual work), then automatic ones; clean and merged last.
+        public var sortKey: Int {
+            switch state {
+            case let .conflicts(total, automatic): return Self.conflictBase + (total - automatic) * Self.manualWeight + automatic
+            case .clean: return Self.cleanKey
+            case .alreadyMerged: return Self.mergedKey
+            case .pending, .notApplicable: return Self.unknownKey
+            }
+        }
+
+        private static let manualWeight = 1_000
+        private static let conflictBase = 10
+        private static let cleanKey = 2
+        private static let mergedKey = 1
+        private static let unknownKey = 0
+
+        init(_ prediction: BranchPrediction?, loaded: Bool) {
+            guard loaded else {
+                state = .pending
+                return
+            }
+            guard let prediction else {
+                state = .notApplicable
+                return
+            }
+            guard let merge = prediction.prediction else {
+                state = .alreadyMerged
+                return
+            }
+            state = merge.isClean ? .clean : .conflicts(total: merge.conflicts.count, automatic: merge.automaticCount)
+        }
+    }
 
     public struct ComparisonCell: Sendable, Equatable {
         public let text: String
@@ -43,7 +99,8 @@ public struct BranchRow: Identifiable, Sendable, Equatable {
         private static let behindWeight = 1_000_000
     }
 
-    public init(_ branch: BranchRecord, integrationNames: [String]) {
+    public init(_ branch: BranchRecord, integrationNames: [String], mergePrediction: BranchPrediction? = nil,
+                predictionsLoaded: Bool = false) {
         name = branch.name
         presence = branch.presence
         lastCommit = branch.tip.committerDate
@@ -51,6 +108,7 @@ public struct BranchRow: Identifiable, Sendable, Equatable {
         first = ComparisonCell(integrationNames.first.flatMap(branch.status(against:)))
         second = ComparisonCell(integrationNames.dropFirst().first.flatMap(branch.status(against:)))
         notes = BranchNote.notes(for: branch)
+        merge = branch.isIntegration ? MergeCell(nil, loaded: true) : MergeCell(mergePrediction, loaded: predictionsLoaded)
     }
 
     public var presenceText: String {
@@ -63,7 +121,17 @@ public struct BranchRow: Identifiable, Sendable, Equatable {
 
     public var firstSortKey: Int { first.sortKey }
     public var secondSortKey: Int { second.sortKey }
+    public var mergeSortKey: Int { merge.sortKey }
     public var presenceSortKey: String { presence.rawValue }
+}
+
+/// A branch's predicted merge into the first integration branch, as shown in the table.
+public enum MergeState: Sendable, Equatable {
+    case pending
+    case notApplicable
+    case alreadyMerged
+    case clean
+    case conflicts(total: Int, automatic: Int)
 }
 
 /// Short labels shown as badges in the table and the detail header.

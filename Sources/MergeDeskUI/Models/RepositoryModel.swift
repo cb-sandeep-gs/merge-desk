@@ -2,17 +2,47 @@ import Foundation
 import MergeDeskCore
 import Observation
 
-/// State for one repository's Branches screen: inventory, filter, sort, selection and the detail pane.
+/// What the middle pane shows for a repository.
+public enum ContentMode: String, CaseIterable, Sendable {
+    case branches
+    case matrix
+    case digest
+
+    public var title: String {
+        switch self {
+        case .branches: return "Branches"
+        case .matrix: return "Conflict Matrix"
+        case .digest: return "Daily Digest"
+        }
+    }
+}
+
+/// State for one repository: inventory, predictions, matrix, digest, filter, sort, selection and the detail pane.
 @MainActor
 @Observable
 public final class RepositoryModel {
     public let repository: RegisteredRepository
 
     public private(set) var inventoryState: LoadState<RepositoryInventory> = .idle
+    /// Every branch vs every integration branch; follows each inventory load.
+    public private(set) var predictionState: LoadState<PredictionReport> = .idle
+    /// Integration + branch × branch; computed when the matrix is first shown.
+    public private(set) var matrixState: LoadState<PredictionReport> = .idle
     public private(set) var detailState: LoadState<BranchDetail> = .idle
+    /// Latest saved digest (from the scheduled run or "Run Now").
+    public private(set) var digest: DailyDigest?
+    public private(set) var isRunningDaily = false
+    public private(set) var dailyError: String?
     /// Config warnings (e.g. unknown keys) to show above the table.
     public private(set) var configWarnings: [String] = []
 
+    /// Remembered per repository between launches.
+    public var contentMode: ContentMode = .branches {
+        didSet {
+            defaults.set(contentMode.rawValue, forKey: contentModeKey)
+            if contentMode == .matrix, matrixState.value == nil, !matrixState.isLoading { loadMatrix() }
+        }
+    }
     public var filter = BranchFilter() {
         didSet { rebuildRows() }
     }
@@ -26,31 +56,58 @@ public final class RepositoryModel {
             loadDetail()
         }
     }
+    /// Selected matrix cell.
+    public var selectedPair: PairPrediction?
 
     /// Filtered and sorted rows for the table.
     public private(set) var rows: [BranchRow] = []
 
     private let git: GitClient
+    private let paths: SupportPaths
+    @ObservationIgnored private let defaults: UserDefaults
+    private var contentModeKey: String { "\(Self.contentModeKeyPrefix)\(repository.id.uuidString)" }
+    static let contentModeKeyPrefix = "contentMode."
     private let cache = ComparisonCache()
+    private let predictionStore: PredictionStore
+    private var config = RepoConfig.defaults
     private var refreshTask: Task<Void, Never>?
+    private var predictionTask: Task<Void, Never>?
+    private var matrixTask: Task<Void, Never>?
     private var detailTask: Task<Void, Never>?
+    private var dailyTask: Task<Void, Never>?
 
-    public init(repository: RegisteredRepository, git: GitClient = ProcessGitClient()) {
+    public init(repository: RegisteredRepository, git: GitClient = ProcessGitClient(), paths: SupportPaths = SupportPaths(),
+                defaults: UserDefaults = .standard) {
         self.repository = repository
         self.git = git
+        self.paths = paths
+        self.defaults = defaults
+        self.contentMode = defaults.string(forKey: "\(Self.contentModeKeyPrefix)\(repository.id.uuidString)")
+            .flatMap(ContentMode.init(rawValue:)) ?? .branches
+        self.predictionStore = PredictionStore(paths: paths, repositoryRoot: repository.url)
+        self.digest = DailyRunner.latestDigest(repositoryRoot: repository.url, paths: paths)
     }
 
     // MARK: - Derived
 
     public var inventory: RepositoryInventory? { inventoryState.value }
+    public var predictions: PredictionReport? { predictionState.value }
     public var integrationNames: [String] { inventory?.integrationRefs.map(\.name) ?? [] }
     public var availablePrefixes: [String] { inventory.map { BranchFilter.prefixes(in: $0.branches) } ?? [] }
     public var totalBranchCount: Int { inventory?.branches.count ?? 0 }
 
+    /// Predicted merges of the selected branch into each integration branch.
+    public var selectedBranchPredictions: [(integration: String, prediction: BranchPrediction)] {
+        guard let name = selectedBranch, let predictions else { return [] }
+        return predictions.integration.compactMap { integration in
+            integration.prediction(for: name).map { (integration.integration, $0) }
+        }
+    }
+
     // MARK: - Actions
 
-    /// Reloads config and inventory. A refresh in flight is replaced, never doubled. Keeps showing the previous
-    /// inventory until the new one arrives (only the first load shows a spinner).
+    /// Reloads config and inventory, then predictions. A refresh in flight is replaced, never doubled. Keeps
+    /// showing the previous data until the new data arrives (only the first load shows a spinner).
     public func refresh(now: Date = Date()) {
         refreshTask?.cancel()
         if inventoryState.value == nil { inventoryState = .loading }
@@ -61,7 +118,8 @@ public final class RepositoryModel {
                 let loaded = try ConfigLoader.load(repositoryRoot: root)
                 let inventory = try await builder.build(repositoryRoot: root, config: loaded.config, now: now)
                 guard !Task.isCancelled else { return }
-                self?.apply(inventory, warnings: loaded.warnings.map(\.description))
+                self?.apply(inventory, config: loaded.config, warnings: loaded.warnings.map(\.description))
+                await self?.predictionTask?.value
             } catch is CancellationError {
                 return
             } catch {
@@ -71,19 +129,72 @@ public final class RepositoryModel {
         }
     }
 
-    /// Waits for the current refresh (tests and the CLI-style "refresh then read" flow).
+    /// Waits for the current refresh and the predictions it started.
     public func waitForRefresh() async {
         await refreshTask?.value
+        await predictionTask?.value
     }
 
-    public func waitForDetail() async {
-        await detailTask?.value
+    public func waitForDetail() async { await detailTask?.value }
+    public func waitForMatrix() async { await matrixTask?.value }
+    public func waitForDaily() async { await dailyTask?.value }
+
+    /// Computes the branch × branch matrix (seconds on a large repo the first time, then cached on disk).
+    public func loadMatrix() {
+        guard let inventory else { return }
+        matrixTask?.cancel()
+        matrixState = .loading
+        let predictor = Predictor(git: git, store: predictionStore)
+        let config = self.config
+        let root = repository.url
+        matrixTask = Task { [weak self] in
+            do {
+                let report = try await predictor.predict(inventory: inventory, config: config, repositoryRoot: root,
+                                                         scope: .integrationAndMatrix, now: inventory.generatedAt)
+                guard !Task.isCancelled else { return }
+                self?.matrixState = .loaded(report)
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.matrixState = .failed(ErrorText.message(error))
+            }
+        }
     }
 
-    private func apply(_ inventory: RepositoryInventory, warnings: [String]) {
+    /// Runs the daily job now: fetch, predict, write the digest; then reloads everything. No notification —
+    /// the result is on screen.
+    public func runDaily(fetch: Bool = true, now: Date = Date()) {
+        guard !isRunningDaily else { return }
+        isRunningDaily = true
+        dailyError = nil
+        let runner = DailyRunner(git: git, paths: paths, notifier: SilentNotifier())
+        let root = repository.url
+        dailyTask = Task { [weak self] in
+            do {
+                let result = try await runner.run(repositoryRoot: root, fetch: fetch, now: now)
+                self?.digest = result.digest
+            } catch {
+                self?.dailyError = ErrorText.message(error)
+            }
+            self?.isRunningDaily = false
+            // Fetching may have moved branches: show the new state everywhere.
+            self?.matrixState = .idle
+            self?.refresh(now: now)
+            await self?.waitForRefresh()
+            if self?.contentMode == .matrix { self?.loadMatrix() }
+        }
+    }
+
+    // MARK: - Private
+
+    private func apply(_ inventory: RepositoryInventory, config: RepoConfig, warnings: [String]) {
+        self.config = config
         configWarnings = warnings
         inventoryState = .loaded(inventory)
         rebuildRows()
+        loadPredictions(inventory)
+        if contentMode == .matrix { loadMatrix() } else { matrixState = .idle }
         // Keep the selection if the branch still exists; reload its detail (its tip may have moved).
         if let selected = selectedBranch {
             if inventory.branch(named: selected) == nil {
@@ -94,14 +205,40 @@ public final class RepositoryModel {
         }
     }
 
+    private func loadPredictions(_ inventory: RepositoryInventory) {
+        predictionTask?.cancel()
+        if predictionState.value == nil { predictionState = .loading }
+        let predictor = Predictor(git: git, store: predictionStore)
+        let config = self.config
+        let root = repository.url
+        predictionTask = Task { [weak self] in
+            do {
+                let report = try await predictor.predict(inventory: inventory, config: config, repositoryRoot: root,
+                                                         scope: .integration, now: inventory.generatedAt)
+                guard !Task.isCancelled else { return }
+                self?.predictionState = .loaded(report)
+                self?.rebuildRows()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.predictionState = .failed(ErrorText.message(error))
+            }
+        }
+    }
+
     private func rebuildRows() {
         guard let inventory else {
             rows = []
             return
         }
         let names = integrationNames
-        rows = filter.apply(to: inventory)
-            .map { BranchRow($0, integrationNames: names) }
+        let firstIntegration = predictions.flatMap { report in names.first.flatMap(report.integration(named:)) }
+        rows = filter.apply(to: inventory, predictions: predictions)
+            .map { branch in
+                BranchRow(branch, integrationNames: names, mergePrediction: firstIntegration?.prediction(for: branch.name),
+                          predictionsLoaded: predictions != nil)
+            }
             .sorted(using: sortOrder)
     }
 

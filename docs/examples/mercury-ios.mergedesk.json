@@ -6,6 +6,7 @@
   "primaryRemote": "origin",
   "protectedBranches": ["main", "develop", "release/*"],
   "staleDays": 21,
+  "driftBehindThreshold": 50,
   "activeBranchPrefixes": [],
   "fileClasses": [
     { "glob": "**/*.generated.swift", "strategy": "regenerate" },

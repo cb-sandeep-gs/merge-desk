@@ -14,6 +14,8 @@ public struct BranchFilter: Sendable, Equatable {
         case merged
         /// Local-only branches and local copies ahead of the remote.
         case unpushed
+        /// Predicted to conflict with the first integration branch (needs a `PredictionReport`).
+        case willConflict = "will-conflict"
 
         public var title: String {
             switch self {
@@ -23,6 +25,7 @@ public struct BranchFilter: Sendable, Equatable {
             case .stale: return "Stale"
             case .merged: return "Merged"
             case .unpushed: return "Unpushed"
+            case .willConflict: return "Will conflict"
             }
         }
     }
@@ -39,11 +42,13 @@ public struct BranchFilter: Sendable, Equatable {
         self.prefix = prefix
     }
 
-    public func apply(to inventory: RepositoryInventory) -> [BranchRecord] {
+    /// - Parameter predictions: needed for `.willConflict`; without it that scope matches nothing.
+    public func apply(to inventory: RepositoryInventory, predictions: PredictionReport? = nil) -> [BranchRecord] {
         let firstIntegration = inventory.integrationRefs.first?.name
+        let conflicting = Set(firstIntegration.flatMap { predictions?.integration(named: $0) }?.conflicting.map(\.branch) ?? [])
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return inventory.branches.filter { branch in
-            matchesScope(branch, firstIntegration: firstIntegration, userEmail: inventory.currentUserEmail)
+            matchesScope(branch, firstIntegration: firstIntegration, userEmail: inventory.currentUserEmail, conflicting: conflicting)
                 && (prefix.map { branch.name.hasPrefix($0) } ?? true)
                 && (query.isEmpty
                     || branch.name.localizedCaseInsensitiveContains(query)
@@ -51,7 +56,7 @@ public struct BranchFilter: Sendable, Equatable {
         }
     }
 
-    private func matchesScope(_ branch: BranchRecord, firstIntegration: String?, userEmail: String?) -> Bool {
+    private func matchesScope(_ branch: BranchRecord, firstIntegration: String?, userEmail: String?, conflicting: Set<String>) -> Bool {
         let isMergedIntoFirst = firstIntegration.map { branch.mergedInto.contains($0) } ?? false
         switch scope {
         case .all:
@@ -67,6 +72,8 @@ public struct BranchFilter: Sendable, Equatable {
             return isMergedIntoFirst && !branch.isIntegration && !branch.isProtected
         case .unpushed:
             return branch.hasUnpushedCommits
+        case .willConflict:
+            return conflicting.contains(branch.name)
         }
     }
 
@@ -85,14 +92,14 @@ public struct BranchFilter: Sendable, Equatable {
 
 extension RepositoryInventory {
     /// The same inventory with only the branches `filter` keeps (for `--json` output and exports).
-    public func filtered(by filter: BranchFilter) -> RepositoryInventory {
+    public func filtered(by filter: BranchFilter, predictions: PredictionReport? = nil) -> RepositoryInventory {
         RepositoryInventory(
             repositoryPath: repositoryPath,
             generatedAt: generatedAt,
             integrationRefs: integrationRefs,
             missingIntegrationBranches: missingIntegrationBranches,
             currentUserEmail: currentUserEmail,
-            branches: filter.apply(to: self)
+            branches: filter.apply(to: self, predictions: predictions)
         )
     }
 }

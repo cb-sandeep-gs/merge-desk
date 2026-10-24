@@ -16,7 +16,8 @@ struct BranchDetailView: View {
             case let .failed(message):
                 ContentUnavailableView("Couldn't read this branch", systemImage: Symbol.warning, description: Text(message))
             case let .loaded(detail):
-                BranchDetailContent(detail: detail)
+                BranchDetailContent(detail: detail, predictions: model.selectedBranchPredictions,
+                                    predictionsLoading: model.predictionState.isLoading)
             }
         }
         .accessibilityIdentifier(AccessibilityID.detail)
@@ -25,12 +26,15 @@ struct BranchDetailView: View {
 
 private struct BranchDetailContent: View {
     let detail: BranchDetail
+    let predictions: [(integration: String, prediction: BranchPrediction)]
+    let predictionsLoading: Bool
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Layout.sectionSpacing) {
                 header
                 comparisons
+                predictedMerges
                 if let base = detail.base {
                     commits(base: base)
                     files(base: base)
@@ -75,6 +79,47 @@ private struct BranchDetailContent: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    @ViewBuilder private var predictedMerges: some View {
+        if predictionsLoading && predictions.isEmpty {
+            GroupBox("Predicted merges") {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+        } else if !predictions.isEmpty {
+            GroupBox("Predicted merges") {
+                VStack(alignment: .leading, spacing: Layout.rowSpacing) {
+                    ForEach(predictions, id: \.integration) { item in
+                        predictedMerge(into: item.integration, item.prediction)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .help("Computed with git merge-tree: nothing is checked out or changed")
+            .accessibilityIdentifier(AccessibilityID.detailPredictions)
+        }
+    }
+
+    @ViewBuilder private func predictedMerge(into integration: String, _ branch: BranchPrediction) -> some View {
+        if let prediction = branch.prediction, !prediction.isClean {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: Layout.rowSpacing) {
+                    ForEach(prediction.conflicts.prefix(Layout.detailFileLimit)) { conflict in
+                        HStack {
+                            Text(conflict.path).font(.caption.monospaced()).lineLimit(1).truncationMode(.head).help(conflict.path)
+                            Spacer()
+                            RouteBadge(route: conflict.route)
+                        }
+                    }
+                }
+            } label: {
+                Label("Into \(integration): \(prediction.summary)", systemImage: Symbol.conflict)
+                    .foregroundStyle(Palette.conflict)
+            }
+        } else {
+            Label("Into \(integration): \(branch.isAlreadyMerged ? "already merged" : "merges cleanly")", systemImage: Symbol.clean)
+                .foregroundStyle(Palette.clean)
         }
     }
 
