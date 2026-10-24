@@ -311,3 +311,84 @@ final class ReplayBenchmarkTests: XCTestCase {
         XCTAssertFalse(markdownEquivalent, "only JSON and pbxproj have a looser comparison")
     }
 }
+
+/// Resolving by hand, file by file.
+final class ManualResolutionTests: XCTestCase {
+    private var folder: URL!
+    private let git = ProcessGitClient(environmentOverrides: FixtureBuilder.isolatedEnvironment)
+
+    override func setUpWithError() throws { folder = try TemporaryFolder.make() }
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
+
+    private struct Started {
+        let manager: SessionManager
+        let session: MergeSession
+        let root: URL
+    }
+
+    private func start(_ pattern: FixturePattern) async throws -> Started {
+        let fixture = try await FixtureBuilder().build(pattern, in: folder)
+        var config = RepoConfig.defaults
+        config.protectedBranches = []
+        let manager = SessionManager(repositoryRoot: fixture.url, config: config, git: git,
+                                     paths: SupportPaths(root: folder.appendingPathComponent("support")),
+                                     github: GitHubCLI(executableURL: nil))
+        let planned = try await manager.plan(source: FixtureBranch.source, target: FixtureBranch.target)
+        return Started(manager: manager, session: try await manager.start(planned.id, fetch: false), root: fixture.url)
+    }
+
+    func testRenderChoices() {
+        let marker = { (character: Character) in String(repeating: character, count: ConflictedText.markerSize) }
+        let text = ConflictedText(mergeFileOutput: ["a", "b", marker("<") + " ours", "X", marker("|") + " base", "o", marker("="), "Y",
+                                                    marker(">") + " theirs", "c"].joined(separator: "\n") + "\n")
+        XCTAssertEqual(text.blocks.first?.before, ["a", "b"])
+        XCTAssertEqual(text.blocks.first?.after, ["c"])
+        XCTAssertEqual(text.render(choices: [.into]), "a\nb\nX\nc\n")
+        XCTAssertEqual(text.render(choices: [.from]), "a\nb\nY\nc\n")
+        XCTAssertEqual(text.render(choices: [.both]), "a\nb\nX\nY\nc\n")
+        XCTAssertNil(text.render(choices: []), "every block needs a choice")
+    }
+
+    func testResolveATextConflictByChoosingBlocks() async throws {
+        let run = try await start(.contentConflict)
+        let (manager, started, root) = (run.manager, run.session, run.root)
+        guard case let .text(text) = try await manager.fileConflict(started.id, path: "Sources/App.swift") else {
+            return XCTFail("expected a text conflict")
+        }
+        XCTAssertEqual(text.conflictCount, 1)
+        XCTAssertEqual(text.blocks.first?.into, ["let timeout = 20"])
+        XCTAssertEqual(text.blocks.first?.from, ["let timeout = 5"])
+
+        do {
+            _ = try await manager.resolveFile(started.id, path: "Sources/App.swift", content: Data("<<<<<<< x\n".utf8))
+            XCTFail("markers are refused")
+        } catch SessionError.unresolved {}
+
+        let content = try XCTUnwrap(text.render(choices: [.from]))
+        var session = try await manager.resolveFile(started.id, path: "Sources/App.swift", content: Data(content.utf8))
+        XCTAssertEqual(session.conflictedFiles, [])
+        XCTAssertEqual(session.resolutions?.first { $0.path == "Sources/App.swift" }?.tier, .manual)
+        session = try await manager.continueAfterResolving(session.id)
+        XCTAssertEqual(session.state, .ready)
+        let merged = try await git.run(["show", "\(try XCTUnwrap(session.resultID)):Sources/App.swift"], in: root)
+        XCTAssertEqual(String(decoding: merged.standardOutput, as: UTF8.self), content)
+    }
+
+    func testDeletedOnOneSideOffersKeepOrDelete() async throws {
+        let run = try await start(.modifyDelete)
+        let (manager, started, root) = (run.manager, run.session, run.root)
+        let conflict = try await manager.fileConflict(started.id, path: "Docs/Old.md")
+        XCTAssertEqual(conflict, .presentOnOneSide(inInto: true, inFrom: false))
+        // Take source's side: the file is deleted.
+        var session = try await manager.useVersion(started.id, path: "Docs/Old.md", side: .from)
+        session = try await manager.continueAfterResolving(session.id)
+        XCTAssertEqual(session.state, .ready)
+        let shown = try await git.run(["show", "\(try XCTUnwrap(session.resultID)):Docs/Old.md"], in: root)
+        XCTAssertNotEqual(shown.exitCode, 0, "the file is gone in the merge")
+    }
+
+    func testBinaryDetection() {
+        XCTAssertTrue(SessionManager.isBinary(Data([0x89, 0x50, 0x00, 0x47])))
+        XCTAssertFalse(SessionManager.isBinary(Data("plain text\n".utf8)))
+    }
+}

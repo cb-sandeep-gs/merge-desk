@@ -5,16 +5,20 @@ import Observation
 /// What the middle pane shows for a repository.
 public enum ContentMode: String, CaseIterable, Sendable {
     case branches
+    /// The guided Merge tab.
+    case merge
     case matrix
     case digest
+    /// History of merge sessions.
     case merges
 
     public var title: String {
         switch self {
         case .branches: return "Branches"
+        case .merge: return "Merge"
         case .matrix: return "Conflict Matrix"
         case .digest: return "Daily Digest"
-        case .merges: return "Merges"
+        case .merges: return "History"
         }
     }
 }
@@ -39,6 +43,8 @@ public final class RepositoryModel {
     public private(set) var configWarnings: [String] = []
     /// Merge sessions for this repository.
     public let sessions: SessionsModel
+    /// The guided Merge tab.
+    public private(set) var mergeFlow: MergeFlowModel!
     /// Open pull requests by head branch (only when the GitHub CLI is installed and signed in).
     public private(set) var pullRequests: [String: PullRequestInfo] = [:]
 
@@ -64,8 +70,6 @@ public final class RepositoryModel {
     }
     /// Selected matrix cell.
     public var selectedPair: PairPrediction?
-    /// The Merge… sheet for the selected branch.
-    public var isMergeSheetPresented = false
 
     /// Filtered and sorted rows for the table.
     public private(set) var rows: [BranchRow] = []
@@ -105,6 +109,7 @@ public final class RepositoryModel {
         self.predictionStore = PredictionStore(paths: paths, repositoryRoot: repository.url)
         self.digest = DailyRunner.latestDigest(repositoryRoot: repository.url, paths: paths)
         sessions.onBranchesChanged = { [weak self] in self?.refresh() }
+        mergeFlow = MergeFlowModel(sessions: sessions, git: git) { [weak self] in self?.inventory }
     }
 
     // MARK: - Derived
@@ -124,6 +129,12 @@ public final class RepositoryModel {
     }
 
     // MARK: - Actions
+
+    /// The toolbar's Merge…: go to the Merge tab with the selected branch as the one to merge from.
+    public func startMergeFromSelection() {
+        if mergeFlow.step == .choose, let selectedBranch { mergeFlow.from = selectedBranch }
+        contentMode = .merge
+    }
 
     /// Reloads config and inventory, then predictions. A refresh in flight is replaced, never doubled. Keeps
     /// showing the previous data until the new data arrives (only the first load shows a spinner).

@@ -20,6 +20,13 @@ public enum AccessibilityID {
     public static let sessionList = "sessions.list"
     public static let sessionActionPrefix = "session.action."
     public static let sessionResolutions = "session.resolutions"
+    public static let mergeFlow = "merge.flow"
+    public static let mergeFlowButton = "merge.flow.merge"
+    public static let mergeFlowApply = "merge.flow.apply"
+    public static let mergeFlowComplete = "merge.flow.complete"
+    public static let resolveFilePrefix = "merge.flow.resolve."
+    public static let resolveSheet = "resolve.sheet"
+    public static let saveResolution = "resolve.save"
     public static let statusLine = "branches.status"
     public static let detail = "branch.detail"
     public static let detailCommits = "branch.detail.commits"
@@ -65,6 +72,17 @@ public enum Layout {
     static let matrixStrongOpacity = 0.9
     static let settingsWidth: CGFloat = 460
     static let menuBarDigestLimit = 5
+    static let mergeFlowMaxWidth: CGFloat = 760
+    static let cardPadding: CGFloat = 16
+    static let cardCornerRadius: CGFloat = 10
+    static let fieldLabelWidth: CGFloat = 110
+    static let fieldSpacing: CGFloat = 8
+    static let branchPickerWidth: CGFloat = 420
+    static let stepBadgeSize: CGFloat = 26
+    static let resolveSheetWidth: CGFloat = 900
+    static let resolveSheetHeight: CGFloat = 620
+    static let previewMaxHeight: CGFloat = 220
+    static let contextLineLimit = 3
     static let narrowColumnMin: CGFloat = 56
     static let sectionSpacing: CGFloat = 16
     static let rowSpacing: CGFloat = 4
@@ -92,6 +110,9 @@ enum Symbol {
     static let conflict = "exclamationmark.octagon"
     static let digest = "newspaper"
     static let schedule = "clock"
+    static let swap = "arrow.up.arrow.down"
+    static let info = "info.circle"
+    static let document = "doc.text"
 }
 
 /// Semantic colours (system colours adapt to light/dark mode).

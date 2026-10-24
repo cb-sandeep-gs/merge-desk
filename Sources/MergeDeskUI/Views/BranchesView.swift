@@ -12,6 +12,7 @@ struct BranchesView: View {
             banners
             switch model.contentMode {
             case .branches: content
+            case .merge: MergeFlowView(flow: model.mergeFlow)
             case .matrix: MatrixView(model: model)
             case .digest: DigestView(model: model)
             case .merges: SessionsListView(sessions: model.sessions)
@@ -23,9 +24,6 @@ struct BranchesView: View {
         .navigationSubtitle(model.repository.path)
         .searchable(text: $model.filter.searchText, placement: .toolbar, prompt: "Branch or author")
         .toolbar { toolbar }
-        .sheet(isPresented: $model.isMergeSheetPresented) {
-            if let source = model.selectedBranch { MergeSheet(model: model, source: source) }
-        }
     }
 
     private var modeBar: some View {
@@ -181,9 +179,9 @@ struct BranchesView: View {
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if model.contentMode == .branches { filterToolbar }
         ToolbarItem {
-            Button("Merge…", systemImage: Symbol.merge) { model.isMergeSheetPresented = true }
-                .disabled(model.selectedBranch == nil || model.inventory == nil)
-                .help("Merge the selected branch into another, in a separate worktree")
+            Button("Merge…", systemImage: Symbol.merge) { model.startMergeFromSelection() }
+                .disabled(model.inventory == nil)
+                .help("Open the Merge tab (the selected branch is filled in as \"Merge from\")")
                 .accessibilityIdentifier(AccessibilityID.mergeButton)
         }
         ToolbarItem {

@@ -28,7 +28,23 @@ open .build/MergeDesk.app
 
 ## The app
 
-Add a repository with **+** (any folder inside a clone; the folder is never modified). The window has three panes:
+Add a repository with **+** (any folder inside a clone; the folder is never modified).
+
+### Merging two branches (the Merge tab)
+
+1. **Choose branches** — *Merge into* (the branch that receives the changes) and *Merge from* (whose changes come in).
+   ⇅ swaps them. The toolbar's **Merge…** opens this tab with the selected branch as *Merge from*.
+2. **What will happen** — how many commits come in, whether files will conflict (and how many Merge Desk resolves
+   by itself), and whether the target is protected (then the result goes to a pull request). Press **Merge**.
+3. **Resolve conflicts** — each file that needs you has a **Resolve…** button. The Resolve window shows every
+   conflicting place side by side under the two branch names; pick **Keep develop / Keep feature/x / Keep both** (or
+   click a version, or use the "for all" buttons), preview the result and **Save Resolution**. Files deleted on one
+   side, or binary files, get a simple keep/delete choice. Advanced: **Open in Editor**, then **I've Edited It**.
+4. **Complete Merge**, then **Apply** — the branch is updated on your Mac (a backup is kept; **Undo** restores it
+   exactly until you push).
+5. **Push** (asks first), or **Push & Open Pull Request** for protected branches.
+
+The window has three panes:
 
 - **Repositories** — everything you added; right-click to reveal in Finder or remove.
 - **Branches** — one row per branch name (local and remote copies merged), with where it lives, last commit,

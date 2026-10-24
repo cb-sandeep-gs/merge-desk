@@ -131,8 +131,11 @@ public struct SessionManager: Sendable {
             try store.save(session)
             throw SessionError.unresolved(withMarkers)
         }
-        // `add --all -- <paths>` also records files resolved by deleting them.
-        try await checked(["add", "--all", "--"] + session.conflictedFiles, in: worktree)
+        // `add --all -- <paths>` also records files resolved by deleting them. With no paths it would stage
+        // everything, so files already resolved one by one are skipped.
+        if !session.conflictedFiles.isEmpty {
+            try await checked(["add", "--all", "--"] + session.conflictedFiles, in: worktree)
+        }
         let remaining = try await git.execute(.unmergedPaths, in: worktree)
         guard remaining.isEmpty else { throw SessionError.unresolved(remaining) }
         try transition(&session, to: .verifying)

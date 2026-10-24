@@ -8,12 +8,15 @@ public enum ResolutionTier: Sendable, Equatable, Codable {
     case rerere
     /// No rule and nothing recorded: the history engine (MD-5) or a person.
     case unhandled
+    /// A person resolved it in Merge Desk.
+    case manual
 
     public var label: String {
         switch self {
         case let .fileRule(strategy): return strategy.rawValue
         case .rerere: return "rerere"
         case .unhandled: return "none"
+        case .manual: return "you"
         }
     }
 }

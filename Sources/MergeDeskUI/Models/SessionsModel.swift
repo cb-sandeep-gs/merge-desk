@@ -74,7 +74,7 @@ public final class SessionsModel {
         if selectedSessionID == nil { selectedSessionID = sessions.first { !$0.state.isFinished }?.id }
     }
 
-    private var manager: SessionManager {
+    var manager: SessionManager {
         SessionManager(repositoryRoot: repository.url, config: configProvider(), git: git, paths: paths, github: github)
     }
 
@@ -111,6 +111,27 @@ public final class SessionsModel {
     }
 
     public func isProtected(_ branch: String) -> Bool { configProvider().isProtected(branch: branch) }
+
+    // MARK: - Resolving by hand
+
+    /// The conflict in one file of a session, for the Resolve sheet.
+    public func fileConflict(_ session: MergeSession, path: String) async throws -> FileConflict {
+        try await manager.fileConflict(session.id, path: path)
+    }
+
+    /// Saves a resolution written in the Resolve sheet (nil = delete the file).
+    public func resolve(_ session: MergeSession, path: String, content: Data?) async {
+        await perform(changesBranches: false) { manager in
+            _ = try await manager.resolveFile(session.id, path: path, content: content)
+        }
+    }
+
+    /// Keeps one whole side of a file.
+    public func useVersion(_ session: MergeSession, path: String, side: ConflictSide) async {
+        await perform(changesBranches: false) { manager in
+            _ = try await manager.useVersion(session.id, path: path, side: side)
+        }
+    }
 
     private func perform(changesBranches: Bool, _ work: @escaping (SessionManager) async throws -> Void) async {
         isBusy = true

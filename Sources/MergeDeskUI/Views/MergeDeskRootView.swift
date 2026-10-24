@@ -30,7 +30,10 @@ public struct MergeDeskRootView: View {
                 }
             }
         } detail: {
-            if let model = app.selectedModel, model.contentMode == .merges {
+            if let model = app.selectedModel, model.contentMode == .merge {
+                MergeHelpView()
+                    .navigationSplitViewColumnWidth(min: Layout.detailMinWidth, ideal: Layout.detailIdealWidth, max: Layout.detailMaxWidth)
+            } else if let model = app.selectedModel, model.contentMode == .merges {
                 SessionDetailView(sessions: model.sessions)
                     .navigationSplitViewColumnWidth(min: Layout.detailMinWidth, ideal: Layout.detailIdealWidth, max: Layout.detailMaxWidth)
             } else if let model = app.selectedModel {
