@@ -72,7 +72,7 @@ public final class RepositoryModel {
 
     private let git: GitClient
     private let paths: SupportPaths
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: PreferenceStore
     private var contentModeKey: String { "\(Self.contentModeKeyPrefix)\(repository.id.uuidString)" }
     static let contentModeKeyPrefix = "contentMode."
     private let cache = ComparisonCache()
@@ -92,7 +92,7 @@ public final class RepositoryModel {
     private var dailyTask: Task<Void, Never>?
 
     public init(repository: RegisteredRepository, git: GitClient = ProcessGitClient(), paths: SupportPaths = SupportPaths(),
-                defaults: UserDefaults = .standard, github: GitHubCLI = GitHubCLI()) {
+                defaults: PreferenceStore = UserDefaults.standard, github: GitHubCLI = GitHubCLI()) {
         self.repository = repository
         self.git = git
         self.paths = paths

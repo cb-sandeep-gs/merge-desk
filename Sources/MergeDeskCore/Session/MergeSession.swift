@@ -127,7 +127,10 @@ public struct MergeSession: Sendable, Equatable, Codable, Identifiable {
 
     public var state: SessionState
     public var worktreePath: String?
+    /// Files still conflicted, for a person (after the automatic tiers).
     public var conflictedFiles: [String]
+    /// What the automatic tiers did with each conflicted file. Optional so sessions saved before MD-4 still load.
+    public var resolutions: [FileResolution]?
     /// The merge (or squash) commit made in the worktree.
     public var resultID: String?
     public var applied: AppliedChange?

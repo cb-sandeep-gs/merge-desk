@@ -13,6 +13,11 @@ public enum FixturePattern: String, CaseIterable, Sendable {
     case bothAddedFile = "both-added-file"
     case generatedFile = "generated-file"
     case awkwardNames = "awkward-names"
+    case pbxprojAddAdd = "pbxproj-add-add"
+    case pbxprojSameSetting = "pbxproj-same-setting"
+    case releaseNotesUnion = "release-notes-union"
+    case jsonKeys = "json-keys"
+    case jsonSameKey = "json-same-key"
 
     // Shared file contents, kept as constants so each scenario reads as "what changed".
     private enum Content {
@@ -164,6 +169,73 @@ public enum FixturePattern: String, CaseIterable, Sendable {
                 expectedResolution: "regenerate: never merge bytes; run the repo's regenerateCommand"
             )
 
+        case .pbxprojAddAdd:
+            let file = TierOneFixtures.projectPath
+            return FixtureDefinition(
+                pattern: self, targetBranch: target, sourceBranch: source,
+                steps: split(
+                    [.write(file, XcodeProjectText.make(files: [.app])), .commit("chore: project")],
+                    target: [.write(file, XcodeProjectText.make(files: [.app, .target])), .commit("feat: add Target.swift")],
+                    source: [.write(file, XcodeProjectText.make(files: [.app, .source])), .commit("feat: add Source.swift")]
+                ),
+                expectedConflicts: [file],
+                expectedResolution: "pbxproj: both files added in every section (validated)"
+            )
+
+        case .pbxprojSameSetting:
+            let file = TierOneFixtures.projectPath
+            return FixtureDefinition(
+                pattern: self, targetBranch: target, sourceBranch: source,
+                steps: split(
+                    [.write(file, XcodeProjectText.make(files: [.app], buildNumber: "1")), .commit("chore: project")],
+                    target: [.write(file, XcodeProjectText.make(files: [.app], buildNumber: "2")), .commit("chore: build 2")],
+                    source: [.write(file, XcodeProjectText.make(files: [.app], buildNumber: "3")), .commit("chore: build 3")]
+                ),
+                expectedConflicts: [file],
+                expectedResolution: "escalate: both sides changed CURRENT_PROJECT_VERSION"
+            )
+
+        case .releaseNotesUnion:
+            let file = TierOneFixtures.releaseNotesPath
+            let header = "# Release notes\n\n"
+            let old = "- 1.0: first release\n"
+            return FixtureDefinition(
+                pattern: self, targetBranch: target, sourceBranch: source,
+                steps: split(
+                    [.write(file, header + old), .commit("docs: notes")],
+                    target: [.write(file, header + "- 1.1: scores widget\n" + old), .commit("docs: note for scores")],
+                    source: [.write(file, header + "- 1.1: videos tab\n" + old), .commit("docs: note for videos")]
+                ),
+                expectedConflicts: [file],
+                expectedResolution: "unionEntries: both new entries kept, target's first"
+            )
+
+        case .jsonKeys:
+            let file = TierOneFixtures.jsonPath
+            return FixtureDefinition(
+                pattern: self, targetBranch: target, sourceBranch: source,
+                steps: split(
+                    [.write(file, TierOneFixtures.json(["home"])), .commit("chore: config")],
+                    target: [.write(file, TierOneFixtures.json(["home", "scores"])), .commit("feat: scores flag")],
+                    source: [.write(file, TierOneFixtures.json(["home", "videos"])), .commit("feat: videos flag")]
+                ),
+                expectedConflicts: [file],
+                expectedResolution: "jsonKeys: both keys kept, layout preserved"
+            )
+
+        case .jsonSameKey:
+            let file = TierOneFixtures.jsonPath
+            return FixtureDefinition(
+                pattern: self, targetBranch: target, sourceBranch: source,
+                steps: split(
+                    [.write(file, TierOneFixtures.json(["home"])), .commit("chore: config")],
+                    target: [.write(file, TierOneFixtures.json(["home"], value: "false")), .commit("feat: home off")],
+                    source: [.write(file, TierOneFixtures.json(["home"], value: "\"beta\"")), .commit("feat: home beta")]
+                ),
+                expectedConflicts: [file],
+                expectedResolution: "escalate: both sides changed $.flags.home"
+            )
+
         case .awkwardNames:
             let file = "dir with space/naïve file ü.txt"
             return FixtureDefinition(
@@ -178,5 +250,64 @@ public enum FixturePattern: String, CaseIterable, Sendable {
                 expectedResolution: "escalate; proves paths with spaces/unicode and unicode branch names survive parsing"
             )
         }
+    }
+}
+
+/// Paths and contents for the Tier-1 resolver fixtures.
+public enum TierOneFixtures {
+    public static let projectPath = "App.xcodeproj/project.pbxproj"
+    public static let releaseNotesPath = "release-notes/Notes.md"
+    public static let jsonPath = "Config/flags.json"
+
+    /// Xcode-asset-catalog style JSON (`" : "`), one boolean flag per key.
+    public static func json(_ keys: [String], value: String = "true") -> String {
+        let flags = keys.map { "    \"\($0)\" : \(value)" }.joined(separator: ",\n")
+        return "{\n  \"flags\" : {\n\(flags)\n  },\n  \"version\" : 1\n}\n"
+    }
+}
+
+/// A small but valid Xcode project file, in Xcode's own layout (sections, one object per line where Xcode does
+/// that), with a variable list of source files and a build number.
+public enum XcodeProjectText {
+    public struct SourceFile: Sendable {
+        let buildID: String
+        let referenceID: String
+        let name: String
+
+        public static let app = SourceFile(buildID: "A10000000000000000000001", referenceID: "B10000000000000000000001",
+                                           name: "App.swift")
+        public static let target = SourceFile(buildID: "A10000000000000000000002", referenceID: "B10000000000000000000002",
+                                              name: "Target.swift")
+        public static let source = SourceFile(buildID: "A10000000000000000000003", referenceID: "B10000000000000000000003",
+                                              name: "Source.swift")
+    }
+
+    public static func make(files: [SourceFile], buildNumber: String = "1") -> String {
+        let buildFiles = files.map {
+            "\t\t\($0.buildID) /* \($0.name) in Sources */ = {isa = PBXBuildFile; fileRef = \($0.referenceID) /* \($0.name) */; };"
+        }
+        let references = files.map {
+            "\t\t\($0.referenceID) /* \($0.name) */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; "
+                + "path = \($0.name); sourceTree = \"<group>\"; };"
+        }
+        let children = files.map { "\t\t\t\t\($0.referenceID) /* \($0.name) */," }
+        let sources = files.map { "\t\t\t\t\($0.buildID) /* \($0.name) in Sources */," }
+        let lines: [String] = [
+            "// !$*UTF8*$!", "{", "\tarchiveVersion = 1;", "\tclasses = {", "\t};", "\tobjectVersion = 56;", "\tobjects = {", "",
+            "/* Begin PBXBuildFile section */"] + buildFiles + ["/* End PBXBuildFile section */", "",
+            "/* Begin PBXFileReference section */"] + references + ["/* End PBXFileReference section */", "",
+            "/* Begin PBXGroup section */", "\t\tC10000000000000000000001 = {", "\t\t\tisa = PBXGroup;",
+            "\t\t\tchildren = ("] + children + [
+            "\t\t\t);", "\t\t\tsourceTree = \"<group>\";", "\t\t};", "/* End PBXGroup section */", "",
+            "/* Begin PBXSourcesBuildPhase section */", "\t\tD10000000000000000000001 /* Sources */ = {",
+            "\t\t\tisa = PBXSourcesBuildPhase;", "\t\t\tbuildActionMask = 2147483647;", "\t\t\tfiles = ("] + sources + [
+            "\t\t\t);", "\t\t\trunOnlyForDeploymentPostprocessing = 0;", "\t\t};", "/* End PBXSourcesBuildPhase section */", "",
+            "/* Begin XCBuildConfiguration section */", "\t\tE10000000000000000000001 /* Debug */ = {",
+            "\t\t\tisa = XCBuildConfiguration;", "\t\t\tbuildSettings = {",
+            "\t\t\t\tCURRENT_PROJECT_VERSION = \(buildNumber);", "\t\t\t\tSWIFT_VERSION = 5.0;", "\t\t\t};",
+            "\t\t\tname = Debug;", "\t\t};", "/* End XCBuildConfiguration section */",
+            "\t};", "\trootObject = C10000000000000000000001;", "}",
+        ]
+        return lines.joined(separator: "\n") + "\n"
     }
 }

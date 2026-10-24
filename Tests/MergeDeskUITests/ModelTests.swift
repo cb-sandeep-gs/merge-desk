@@ -3,6 +3,14 @@ import MergeDeskFixtures
 @testable import MergeDeskUI
 import XCTest
 
+/// Every model in these tests uses a throwaway support folder, in-memory preferences and no GitHub CLI —
+/// never the user's real Merge Desk data or defaults.
+@MainActor
+func isolatedRepositoryModel(_ root: URL, support: URL, git: GitClient) -> RepositoryModel {
+    RepositoryModel(repository: RegisteredRepository(path: root.path), git: git, paths: SupportPaths(root: support),
+                    defaults: MemoryPreferenceStore(), github: GitHubCLI(executableURL: nil))
+}
+
 @MainActor
 final class RepositoryModelTests: XCTestCase {
     private typealias Branch = InventoryFixture.Branch
@@ -23,7 +31,7 @@ final class RepositoryModelTests: XCTestCase {
     }
 
     private func loadedModel() async throws -> RepositoryModel {
-        let model = RepositoryModel(repository: RegisteredRepository(path: fixture.clone.path), git: git)
+        let model = isolatedRepositoryModel(fixture.clone, support: folder.appendingPathComponent("support"), git: git)
         model.refresh(now: InventoryFixture.now)
         await model.waitForRefresh()
         XCTAssertNotNil(model.inventory, model.inventoryState.errorMessage ?? "not loaded")
@@ -94,8 +102,7 @@ final class RepositoryModelTests: XCTestCase {
     }
 
     private func isolatedModel(_ root: URL) -> RepositoryModel {
-        RepositoryModel(repository: RegisteredRepository(path: root.path), git: git,
-                        paths: SupportPaths(root: folder.appendingPathComponent("support")))
+        isolatedRepositoryModel(root, support: folder.appendingPathComponent("support"), git: git)
     }
 
     func testPredictionsFillTheMergeColumnAndWillConflictFilter() async throws {
@@ -159,7 +166,7 @@ final class RepositoryModelTests: XCTestCase {
     func testNonRepositoryShowsAnError() async throws {
         let plain = folder.appendingPathComponent("plain", isDirectory: true)
         try FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
-        let model = RepositoryModel(repository: RegisteredRepository(path: plain.path), git: git)
+        let model = isolatedRepositoryModel(plain, support: folder.appendingPathComponent("support"), git: git)
         model.refresh()
         XCTAssertTrue(model.inventoryState.isLoading, "first load shows the spinner")
         await model.waitForRefresh()
@@ -169,7 +176,7 @@ final class RepositoryModelTests: XCTestCase {
 
     func testInvalidConfigShowsItsMessage() async throws {
         try Data(#"{ "staleDays": 0 }"#.utf8).write(to: fixture.clone.appendingPathComponent(MergeDeskConstants.configFileName))
-        let model = RepositoryModel(repository: RegisteredRepository(path: fixture.clone.path), git: git)
+        let model = isolatedRepositoryModel(fixture.clone, support: folder.appendingPathComponent("support"), git: git)
         model.refresh()
         await model.waitForRefresh()
         XCTAssertTrue(model.inventoryState.errorMessage?.contains("staleDays") ?? false, model.inventoryState.errorMessage ?? "")
@@ -261,9 +268,7 @@ final class SessionsModelTests: XCTestCase {
 
     func testMergeApplyUndoThroughTheModel() async throws {
         let fixture = try await FixtureBuilder().build(.cleanMerge, in: folder)
-        let model = RepositoryModel(repository: RegisteredRepository(path: fixture.url.path), git: git,
-                                    paths: SupportPaths(root: folder.appendingPathComponent("support")),
-                                    github: GitHubCLI(executableURL: nil))
+        let model = isolatedRepositoryModel(fixture.url, support: folder.appendingPathComponent("support"), git: git)
         model.refresh()
         await model.waitForRefresh()
         let sessions = model.sessions

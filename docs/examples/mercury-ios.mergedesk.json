@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/cricbuzz/merge-desk/main/docs/mergedesk.schema.json",
-  "$comment": "Draft for Mercury-iOSApp (adopted in MD-8). File classes come from the 6-month merge history in docs/PLAN.md §1.",
+  "$comment": "Draft for Mercury-iOSApp (adopted in MD-8). File classes come from Mercury's merge history (PLAN.md §1, MD-4 eval): .agents/ copies are synced from .claude/ by sync-agents; release notes are rewritten per release by generate_workflow_release_notes.py, so a person picks the side (union was wrong in 10/10 replayed merges).",
   "schemaVersion": 1,
   "integrationBranches": ["develop", "main"],
   "primaryRemote": "origin",
@@ -9,11 +9,13 @@
   "driftBehindThreshold": 50,
   "activeBranchPrefixes": [],
   "fileClasses": [
+    { "glob": ".agents/workflows/*.md", "strategy": "regenerate", "command": ["python3", "./mercury", "sync-agents"] },
+    { "glob": ".agents/available_skills/**/*.md", "strategy": "regenerate", "command": ["python3", "./mercury", "sync-agents"] },
     { "glob": "**/*.generated.swift", "strategy": "regenerate" },
     { "glob": "Source/Documentation/catalogs/*.md", "strategy": "regenerate" },
     { "glob": "Source/Documentation/scripts/mercury-open-aliases.json", "strategy": "regenerate" },
     { "glob": "**/*.pbxproj", "strategy": "pbxproj" },
-    { "glob": "Source/release-notes/*.md", "strategy": "unionEntries" },
+    { "glob": "Source/release-notes/*.md", "strategy": "escalate" },
     { "glob": "**/Package.resolved", "strategy": "escalate" }
   ],
   "regenerateCommand": ["python3", "./mercury", "fix"],

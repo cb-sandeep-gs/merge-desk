@@ -8,6 +8,10 @@ public struct SupportPaths: Sendable, Equatable {
 
     /// Environment variable that points Merge Desk at another support folder.
     public static let rootOverrideVariable = "MERGEDESK_SUPPORT_DIR"
+    static let testFolderName = "MergeDesk-tests"
+
+    /// XCTest is loaded: this process is a test run.
+    static var isRunningTests: Bool { NSClassFromString("XCTestCase") != nil }
 
     /// - Parameter root: base folder; defaults to `~/Library/Application Support/MergeDesk`. Tests pass a temp dir.
     public init(root: URL? = nil, fileManager: FileManager = .default) {
@@ -16,6 +20,9 @@ public struct SupportPaths: Sendable, Equatable {
         } else if let override = ProcessInfo.processInfo.environment[Self.rootOverrideVariable], !override.isEmpty {
             // Demos, screenshots and manual testing without touching the real support folder.
             self.root = URL(fileURLWithPath: override, isDirectory: true)
+        } else if Self.isRunningTests {
+            // A test that forgot to pass a folder must never write the developer's real Merge Desk data.
+            self.root = fileManager.temporaryDirectory.appendingPathComponent(Self.testFolderName, isDirectory: true)
         } else {
             let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                 ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")

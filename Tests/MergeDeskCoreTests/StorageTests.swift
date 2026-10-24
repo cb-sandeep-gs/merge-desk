@@ -107,6 +107,8 @@ final class SupportPathsTests: XCTestCase {
         let paths = SupportPaths(root: root)
         XCTAssertTrue(paths.auditLog(for: repository).path.hasPrefix(root.path))
         XCTAssertEqual(paths.auditLog(for: repository).lastPathComponent, MergeDeskConstants.auditLogFileName)
-        XCTAssertTrue(SupportPaths().root.path.hasSuffix("Application Support/\(MergeDeskConstants.applicationSupportFolderName)"))
+        XCTAssertTrue(SupportPaths.isRunningTests)
+        XCTAssertTrue(SupportPaths().root.path.hasPrefix(FileManager.default.temporaryDirectory.path),
+                      "in a test process the default folder is temporary, never the real support folder")
     }
 }

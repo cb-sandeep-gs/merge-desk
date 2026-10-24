@@ -19,6 +19,7 @@ public enum AccessibilityID {
     public static let mergeButton = "branch.merge"
     public static let sessionList = "sessions.list"
     public static let sessionActionPrefix = "session.action."
+    public static let sessionResolutions = "session.resolutions"
     public static let statusLine = "branches.status"
     public static let detail = "branch.detail"
     public static let detailCommits = "branch.detail.commits"

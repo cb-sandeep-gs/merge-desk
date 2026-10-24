@@ -63,7 +63,8 @@
         "additionalProperties": false,
         "properties": {
           "glob": { "$ref": "#/$defs/glob" },
-          "strategy": { "$ref": "#/$defs/strategy" }
+          "strategy": { "$ref": "#/$defs/strategy" },
+          "command": { "$ref": "#/$defs/argv", "description": "For 'regenerate': this class's generator (falls back to regenerateCommand)." }
         }
       }
     },

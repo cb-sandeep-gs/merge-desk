@@ -146,6 +146,7 @@ struct SessionDetailView: View {
                         Label(error, systemImage: Symbol.warning).foregroundStyle(Palette.conflict).textSelection(.enabled)
                     }
                     ForEach(session.warnings, id: \.self) { Label($0, systemImage: Symbol.warning).foregroundStyle(.secondary) }
+                    if let resolutions = session.resolutions, !resolutions.isEmpty { automatic(resolutions) }
                     if session.state == .resolving { conflicts(session) }
                     actions(session)
                     timeline(session)
@@ -192,6 +193,28 @@ struct SessionDetailView: View {
                 Link("Open pull request page", destination: url)
             }
         }
+    }
+
+    /// What Tier 1 (file rules) and Tier 2 (rerere) did with each conflicted file.
+    private func automatic(_ resolutions: [FileResolution]) -> some View {
+        let applied = resolutions.filter { $0.status == .applied }.count
+        return GroupBox("Resolved automatically: \(applied) of \(resolutions.count)") {
+            VStack(alignment: .leading, spacing: Layout.rowSpacing) {
+                ForEach(resolutions) { resolution in
+                    HStack(alignment: .firstTextBaseline) {
+                        Image(systemName: resolution.status == .applied ? Symbol.clean : Symbol.conflict)
+                            .foregroundStyle(resolution.status == .applied ? Palette.clean : Palette.conflict)
+                        VStack(alignment: .leading) {
+                            Text(resolution.path).font(.callout.monospaced()).lineLimit(1).truncationMode(.head)
+                            Text("\(resolution.tier.label) — \(resolution.note)").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .help(resolution.note)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier(AccessibilityID.sessionResolutions)
     }
 
     private func conflicts(_ session: MergeSession) -> some View {

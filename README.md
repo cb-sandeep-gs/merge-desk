@@ -4,10 +4,12 @@ A macOS app and CLI for any Cricbuzz git repository. It lists every branch with 
 before anyone merges, runs merges safely, and resolves conflicts from file-type rules and **git history** — with
 evidence and a confidence score for every decision.
 
-> **Status: MD-3 (merge sessions).** Predict every merge (`git merge-tree`), get a daily digest, and run merges
+> **Status: MD-4 (automatic file-rule resolution).** Predict every merge (`git merge-tree`), get a daily digest, and run merges
 > safely: each merge happens in its own worktree, Apply moves a branch only by compare-and-swap with a backup ref,
 > Undo restores the exact commit, pushes need confirmation and protected branches only get pull requests.
-> Automatic conflict resolution arrives in MD-4 → MD-8 — see [docs/PLAN.md](docs/PLAN.md).
+> Conflicts in classified files (Xcode projects, generated files, JSON, changelogs) and conflicts resolved before
+> (rerere) are resolved automatically and scored against your own history with `mergedesk eval`.
+> The history engine for everything else arrives in MD-5 — see [docs/PLAN.md](docs/PLAN.md).
 
 ## Requirements
 
@@ -78,6 +80,7 @@ at another support folder (demos, testing).
 | `mergedesk schedule --at HH:MM \| --remove \| --run-now` | Install/remove the daily LaunchAgent, or run it now |
 | `mergedesk merge BRANCH --into TARGET [--strategy merge\|squash] [--no-fetch]` | Start a merge session in its own worktree |
 | `mergedesk session list \| show \| continue \| apply \| push \| pr \| undo \| abort ID` | Move a session along (`push`/`pr` ask first; `--yes` skips) |
+| `mergedesk eval [--since 6.months] [--limit N] [--config FILE] [--json]` | Replay past merges and score automatic resolution against what was committed |
 | `mergedesk version` | Merge Desk and git versions |
 | `mergedesk doctor [--repo PATH]` | Checks git, the repository, its `.mergedesk.json` and that the integration branches exist |
 | `mergedesk config validate [--repo PATH \| --file PATH]` | Validates a config; exits 1 on errors, prints warnings |
@@ -98,6 +101,8 @@ Sources/
     Daily/              DailyRunner, DigestBuilder + DigestMarkdown, DailySchedule (LaunchAgent), notifiers
     Session/            MergeSession + state machine, SessionStore, SessionManager (worktree, apply, undo, push, PR)
     GitHub/             remote parsing, compare URLs, optional gh adapter (PRs, CI state)
+    Resolve/            line merge + conflict blocks, ordered JSON, file resolvers, pbxproj validator, AutoResolver
+    Eval/               ReplayBenchmark (mergedesk eval)
     Storage/            AuditLog (append-only JSONL), RepositoryRegistry, SupportPaths (~/Library/Application Support/MergeDesk)
   MergeDeskFixtures/    scripted, deterministic git repositories: conflict patterns + an origin/clone inventory fixture
   MergeDeskUI/          @Observable view models (AppModel, RepositoryModel) and SwiftUI views
@@ -125,10 +130,34 @@ see [docs/mergedesk.schema.json](docs/mergedesk.schema.json) and the
 | `staleDays` | `21` | Days without commits before a branch is stale |
 | `driftBehindThreshold` | `50` | Commits behind the first integration branch before the digest says "drifting" |
 | `activeBranchPrefixes` | `[]` (all) | Branches in the branch × branch conflict matrix |
-| `fileClasses` | pbxproj → `pbxproj`, Package.resolved → `escalate` | First matching glob picks the Tier-1 strategy |
+| `fileClasses` | pbxproj → `pbxproj`, Package.resolved → `escalate` | First matching glob picks the Tier-1 strategy; a `regenerate` rule may carry its own `command` |
 | `regenerateCommand` | none | Run after `regenerate` files are taken; required if any rule uses it |
 | `verifyCommands` | `[]` | Run before a merge is marked ready |
 | `autoApplyMinConfidence` | `{ "default": "high" }` | Below this, a person decides |
+
+## Automatic resolution (Tier 1 + 2)
+
+Right after `git merge` in a session's worktree, each conflicted file goes through:
+
+| Tier | What | When it's applied |
+|---|---|---|
+| `pbxproj` | Three-way line merge keeping both sides' additions; refuses if a key would get two values (e.g. `CURRENT_PROJECT_VERSION`), then checks the result parses and every object reference resolves | high confidence for pure additions; edits are medium |
+| `regenerate` | Keeps one side, then runs the class's `command` (or `regenerateCommand`) and commits its output | when the generator succeeds; otherwise the conflict is put back |
+| `unionEntries` | Keeps both sides' new lines (changelogs written by hand) | high for pure additions |
+| `jsonKeys` | Key-wise merge keeping key order and layout; same-key edits escalate | high |
+| `escalate` | Always a person | — |
+| rerere | git replays a resolution recorded earlier for the identical conflict (files with no rule) | high |
+
+A resolution is applied only at or above `autoApplyMinConfidence` (default `high`); everything else stays
+conflicted for a person, with the reason shown. The merge commit is still yours to apply, push or undo.
+
+**Check rules against your own history before trusting them:** `mergedesk eval --config my.mergedesk.json`
+replays past merges in a private clone (the repository, its hooks and rerere cache are untouched), applies the
+rules and compares each automatic result with the file people actually committed. The gate: no wrong
+resolution, ≥ 99 % exact or equivalent. On Mercury it caught that release notes are rewritten per release (union
+was wrong 10/10, so they're `escalate` in the [Mercury config](docs/examples/mercury-ios.mergedesk.json)), and
+showed pbxproj resolution 9/9 correct with 3 more below-threshold proposals that would also have been exact.
+Note: `--since` uses git's dates; values beyond ~50 years wrap to before 1970 and match nothing.
 
 ## Safety principles
 

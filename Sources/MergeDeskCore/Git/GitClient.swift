@@ -14,6 +14,15 @@ public struct GitResult: Sendable, Equatable {
         self.standardError = standardError
     }
 
+    /// Self if git succeeded, else the failure as a `GitError`.
+    @discardableResult
+    public func requireSuccess() throws -> GitResult {
+        guard exitCode == GitExitCode.success else {
+            throw GitError.commandFailed(arguments: arguments, exitCode: exitCode, message: errorText)
+        }
+        return self
+    }
+
     /// stderr as text, trimmed — for error messages only.
     public var errorText: String {
         String(decoding: standardError, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)

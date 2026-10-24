@@ -173,6 +173,12 @@ enum SessionText {
         if let result = session.resultID { lines.append("  result     \(result.prefix(10))") }
         if let applied = session.applied { lines.append("  applied    \(applied.branch)") }
         if let url = session.pullRequestURL { lines.append("  pr         \(url)") }
+        let resolutions = session.resolutions ?? []
+        if !resolutions.isEmpty {
+            let applied = resolutions.filter { $0.status == .applied }.count
+            lines.append("  automatic  \(applied) of \(resolutions.count) conflicted files resolved")
+            lines += resolutions.map { "             [\($0.status.rawValue)] \($0.path) — \($0.tier.label): \($0.note)" }
+        }
         lines += session.warnings.map { "  ! \($0)" }
         if let error = session.lastError { lines.append("  ✗ \(error)") }
         if !session.conflictedFiles.isEmpty, session.state == .resolving {

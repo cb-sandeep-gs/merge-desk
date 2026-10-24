@@ -131,11 +131,19 @@ public enum ConfigLoader {
 
     private static func validateCommands(_ config: RepoConfig) -> [ConfigIssue] {
         var issues: [ConfigIssue] = []
-        let usesRegenerate = config.fileClasses.contains { $0.strategy == .regenerate }
+        let usesRegenerate = config.fileClasses.contains { $0.strategy == .regenerate && $0.command == nil }
+        for (index, rule) in config.fileClasses.enumerated() {
+            if let command = rule.command, command.isEmpty || command[0].isEmpty {
+                issues.append(.init(.error, field: "fileClasses[\(index)].command", "must name a program"))
+            } else if rule.command != nil, rule.strategy != .regenerate {
+                issues.append(.init(.warning, field: "fileClasses[\(index)].command", "only used by the 'regenerate' strategy"))
+            }
+        }
         if let command = config.regenerateCommand, command.isEmpty || command[0].isEmpty {
             issues.append(.init(.error, field: "regenerateCommand", "must name a program, e.g. [\"python3\", \"./tool\", \"fix\"]"))
         } else if usesRegenerate && config.regenerateCommand == nil {
-            issues.append(.init(.error, field: "regenerateCommand", "required because a file class uses the 'regenerate' strategy"))
+            issues.append(.init(.error, field: "regenerateCommand",
+                                "required because a 'regenerate' file class has no command of its own"))
         }
         for (index, command) in config.verifyCommands.enumerated() where command.isEmpty || command[0].isEmpty {
             issues.append(.init(.error, field: "verifyCommands[\(index)]", "must name a program"))

@@ -57,24 +57,36 @@ extension SessionManager {
     }
 
     /// Runs the merge in the worktree; returns the conflicted paths (empty = clean).
+    /// Runs the merge in the worktree, then the Tier-1 file rules and Tier-2 rerere on its conflicts; returns
+    /// the paths still conflicted (empty = nothing left for a person).
     func runMerge(_ session: inout MergeSession) async throws -> [String] {
         guard let worktree = session.worktreePath.map(URL.init(fileURLWithPath:)), let source = session.sourceID else { return [] }
-        let arguments = session.strategy == .squash
-            ? ["merge", "--squash", "--quiet", source]
-            : ["merge", "--no-ff", "--no-commit", "--quiet", source]
+        // Not --quiet: rerere reports replayed resolutions on the merge's output.
+        let arguments = Self.rerereOptions + (session.strategy == .squash
+            ? ["merge", "--squash", source]
+            : ["merge", "--no-ff", "--no-commit", source])
         let result = try await git.run(arguments, in: worktree)
         let unmerged = try await git.execute(.unmergedPaths, in: worktree)
         guard result.exitCode == GitExitCode.success || !unmerged.isEmpty else {
             throw SessionError.gitFailed(result.errorText)
         }
-        return unmerged
+        guard !unmerged.isEmpty else { return [] }
+        let output = String(decoding: result.standardOutput + result.standardError, as: UTF8.self)
+        session.resolutions = try await AutoResolver(git: git, config: config)
+            .resolve(conflicted: unmerged, in: worktree, mergeOutput: output, runGenerators: true)
+        try store.save(session)
+        return try await git.execute(.unmergedPaths, in: worktree)
     }
+
+    /// rerere for Merge Desk's own merges: replays resolutions recorded earlier (by Merge Desk or the user) and
+    /// records new ones at commit. Kept in the repository's usual `rr-cache`, so it's shared with plain git.
+    static let rerereOptions = ["-c", "rerere.enabled=true", "-c", "rerere.autoUpdate=false"]
 
     /// Commits in the worktree. The repository's own commit hooks run; a failing hook sends the session back to
     /// resolving with the hook's message.
     func commit(_ session: inout MergeSession) async throws {
         guard let worktree = session.worktreePath.map(URL.init(fileURLWithPath:)) else { return }
-        let result = try await git.run(["commit", "--quiet", "--message", session.title], in: worktree)
+        let result = try await git.run(Self.rerereOptions + ["commit", "--quiet", "--message", session.title], in: worktree)
         guard result.exitCode == GitExitCode.success else {
             session.lastError = "Commit failed: \(result.errorText)"
             try transition(&session, to: .resolving, note: "commit failed")
@@ -173,9 +185,10 @@ extension SessionManager {
 
     static func pullRequestBody(_ session: MergeSession) -> String {
         var lines = ["Merges `\(session.source)` into `\(session.target)` (\(session.strategy.title.lowercased())).", ""]
-        if !session.conflictedFiles.isEmpty {
-            lines.append("Conflicts resolved (\(session.conflictedFiles.count)):")
-            lines += session.conflictedFiles.map { "- `\($0)`" }
+        let automatic = (session.resolutions ?? []).filter { $0.status == .applied }
+        if !automatic.isEmpty {
+            lines.append("Resolved automatically (\(automatic.count)):")
+            lines += automatic.map { "- `\($0.path)` — \($0.tier.label): \($0.note)" }
         }
         return lines.joined(separator: "\n")
     }

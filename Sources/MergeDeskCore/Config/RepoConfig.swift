@@ -35,10 +35,14 @@ public enum FileStrategy: String, Codable, Sendable, CaseIterable {
 public struct FileClassRule: Codable, Sendable, Equatable {
     public let glob: GlobPattern
     public let strategy: FileStrategy
+    /// For `regenerate`: the generator for this class (argv, run in the merge worktree); falls back to the
+    /// repo-wide `regenerateCommand`. Lets different generated families use different generators.
+    public let command: [String]?
 
-    public init(glob: GlobPattern, strategy: FileStrategy) {
+    public init(glob: GlobPattern, strategy: FileStrategy, command: [String]? = nil) {
         self.glob = glob
         self.strategy = strategy
+        self.command = command
     }
 }
 

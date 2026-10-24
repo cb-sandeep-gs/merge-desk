@@ -41,6 +41,7 @@ jobs:
           swift run mergedesk list --repo .
           swift run mergedesk predict --repo .
           swift run mergedesk session list --repo .
+          swift run mergedesk eval --repo . --since 1.month
 
       - name: App bundle
         run: ./Scripts/build-app.sh release
