@@ -14,6 +14,12 @@ public enum FixtureStep: Sendable, Equatable {
     case cherryPickTip(branch: String)
     /// Revert the commit at HEAD.
     case revertHead
+    /// Move the fixture clock forward, so later commits look `days` older/newer (staleness tests).
+    case advanceDays(Int)
+    /// Author the following commits as someone else ("Mine" filter tests).
+    case author(name: String, email: String)
+    /// Any other git command, run in the repository (`merge --ff-only`, `switch --create x origin/y`, `config` …).
+    case git([String])
 }
 
 /// A fixture: how to build it, which two branches to merge, and what git is expected to report.

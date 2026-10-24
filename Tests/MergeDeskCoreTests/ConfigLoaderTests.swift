@@ -120,6 +120,8 @@ final class ConfigLoaderTests: XCTestCase {
         assertInvalid(#"{ "integrationBranches": [] }"#, field: "integrationBranches")
         assertInvalid(#"{ "integrationBranches": ["main", "main"] }"#, field: "integrationBranches")
         assertInvalid(#"{ "integrationBranches": ["main", " "] }"#, field: "integrationBranches[1]")
+        assertInvalid(#"{ "primaryRemote": "" }"#, field: "primaryRemote")
+        assertInvalid(#"{ "primaryRemote": "origin/x" }"#, field: "primaryRemote")
         assertInvalid(#"{ "staleDays": 0 }"#, field: "staleDays")
         assertInvalid(#"{ "staleDays": 99999 }"#, field: "staleDays")
         assertInvalid(#"{ "activeBranchPrefixes": [""] }"#, field: "activeBranchPrefixes[0]")

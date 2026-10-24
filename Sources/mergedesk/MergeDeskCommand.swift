@@ -10,7 +10,7 @@ struct MergeDeskCommand: AsyncParsableCommand {
         commandName: "mergedesk",
         abstract: "Branch dashboard, merge planner and history-aware conflict resolver for git repositories.",
         version: MergeDeskConstants.toolVersion,
-        subcommands: [VersionCommand.self, DoctorCommand.self, ConfigCommand.self, FixturesCommand.self]
+        subcommands: [ListCommand.self, ShowCommand.self, DoctorCommand.self, ConfigCommand.self, FixturesCommand.self, VersionCommand.self]
     )
 }
 

@@ -108,6 +108,10 @@ public enum ConfigLoader {
         if Set(config.integrationBranches).count != config.integrationBranches.count {
             issues.append(.init(.error, field: "integrationBranches", "contains duplicates"))
         }
+        let remote = config.primaryRemote
+        if remote.trimmingCharacters(in: .whitespaces).isEmpty || remote.contains("/") {
+            issues.append(.init(.error, field: "primaryRemote", "must be a remote name such as \"origin\" (no slashes)"))
+        }
         if !staleDaysRange.contains(config.staleDays) {
             let range = "\(staleDaysRange.lowerBound) and \(staleDaysRange.upperBound)"
             issues.append(.init(.error, field: "staleDays", "must be between \(range)"))

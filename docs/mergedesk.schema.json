@@ -30,6 +30,10 @@
       "default": ["develop", "main"],
       "description": "Branches every other branch is compared and predicted against, in display order."
     },
+    "primaryRemote": {
+      "type": "string", "minLength": 1, "pattern": "^[^/]+$", "default": "origin",
+      "description": "Remote whose branches are the team's shared state; branches are compared on its tips."
+    },
     "protectedBranches": {
       "type": "array", "items": { "$ref": "#/$defs/glob" }, "default": ["main", "develop", "release/*"],
       "description": "Branch-name globs that only receive changes through a pull request."

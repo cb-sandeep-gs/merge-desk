@@ -6,10 +6,16 @@ import Foundation
 public struct SupportPaths: Sendable, Equatable {
     public let root: URL
 
+    /// Environment variable that points Merge Desk at another support folder.
+    public static let rootOverrideVariable = "MERGEDESK_SUPPORT_DIR"
+
     /// - Parameter root: base folder; defaults to `~/Library/Application Support/MergeDesk`. Tests pass a temp dir.
     public init(root: URL? = nil, fileManager: FileManager = .default) {
         if let root {
             self.root = root
+        } else if let override = ProcessInfo.processInfo.environment[Self.rootOverrideVariable], !override.isEmpty {
+            // Demos, screenshots and manual testing without touching the real support folder.
+            self.root = URL(fileURLWithPath: override, isDirectory: true)
         } else {
             let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                 ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")

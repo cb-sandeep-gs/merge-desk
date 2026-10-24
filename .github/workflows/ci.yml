@@ -38,3 +38,7 @@ jobs:
           swift run mergedesk version
           swift run mergedesk config validate --file docs/examples/mercury-ios.mergedesk.json
           swift run mergedesk fixtures build "$RUNNER_TEMP/fixtures"
+          swift run mergedesk list --repo .
+
+      - name: App bundle
+        run: ./Scripts/build-app.sh release

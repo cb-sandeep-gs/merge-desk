@@ -94,6 +94,8 @@ public struct RepoConfig: Codable, Sendable, Equatable {
     public var schemaVersion: Int
     /// Branches every other branch is compared and predicted against, in display order (e.g. develop, main).
     public var integrationBranches: [String]
+    /// Remote whose branches are the team's shared state; its tips are what branches are compared on.
+    public var primaryRemote: String
     /// Branch-name globs that can only receive changes through a pull request.
     public var protectedBranches: [GlobPattern]
     /// Days without a commit after which a branch counts as stale.
@@ -110,6 +112,7 @@ public struct RepoConfig: Codable, Sendable, Equatable {
     public init(
         schemaVersion: Int,
         integrationBranches: [String],
+        primaryRemote: String,
         protectedBranches: [GlobPattern],
         staleDays: Int,
         activeBranchPrefixes: [String],
@@ -120,6 +123,7 @@ public struct RepoConfig: Codable, Sendable, Equatable {
     ) {
         self.schemaVersion = schemaVersion
         self.integrationBranches = integrationBranches
+        self.primaryRemote = primaryRemote
         self.protectedBranches = protectedBranches
         self.staleDays = staleDays
         self.activeBranchPrefixes = activeBranchPrefixes
@@ -134,6 +138,7 @@ public struct RepoConfig: Codable, Sendable, Equatable {
     public static let defaults = RepoConfig(
         schemaVersion: MergeDeskConstants.supportedConfigSchemaVersion,
         integrationBranches: ["develop", "main"],
+        primaryRemote: "origin",
         protectedBranches: ["main", "develop", "release/*"].map { GlobPattern(staticPattern: $0) },
         staleDays: 21,
         activeBranchPrefixes: [],
@@ -148,7 +153,7 @@ public struct RepoConfig: Codable, Sendable, Equatable {
 
     /// Keys this version understands; anything else in the file is reported as a warning (likely a typo).
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case schemaVersion, integrationBranches, protectedBranches, staleDays, activeBranchPrefixes
+        case schemaVersion, integrationBranches, primaryRemote, protectedBranches, staleDays, activeBranchPrefixes
         case fileClasses, regenerateCommand, verifyCommands, autoApplyMinConfidence
     }
 
@@ -157,6 +162,7 @@ public struct RepoConfig: Codable, Sendable, Equatable {
         let fallback = Self.defaults
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? fallback.schemaVersion
         integrationBranches = try container.decodeIfPresent([String].self, forKey: .integrationBranches) ?? fallback.integrationBranches
+        primaryRemote = try container.decodeIfPresent(String.self, forKey: .primaryRemote) ?? fallback.primaryRemote
         protectedBranches = try container.decodeIfPresent([GlobPattern].self, forKey: .protectedBranches) ?? fallback.protectedBranches
         staleDays = try container.decodeIfPresent(Int.self, forKey: .staleDays) ?? fallback.staleDays
         activeBranchPrefixes = try container.decodeIfPresent([String].self, forKey: .activeBranchPrefixes) ?? fallback.activeBranchPrefixes

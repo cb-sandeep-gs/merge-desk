@@ -4,8 +4,9 @@ A macOS app and CLI for any Cricbuzz git repository. It lists every branch with 
 before anyone merges, runs merges safely, and resolves conflicts from file-type rules and **git history** — with
 evidence and a confidence score for every decision.
 
-> **Status: MD-0 (foundations).** The core library, configuration, audit log, fixture repositories and a minimal
-> CLI exist. The app, dashboard and resolvers arrive in MD-1 → MD-8 — see [docs/PLAN.md](docs/PLAN.md).
+> **Status: MD-1 (branch inventory).** The app lists every branch of any repository with ahead/behind against the
+> integration branches, staleness, merge state, unpushed work, and per-branch commits, files and overlapping
+> branches. Conflict prediction, merging and resolution arrive in MD-2 → MD-8 — see [docs/PLAN.md](docs/PLAN.md).
 
 ## Requirements
 
@@ -18,10 +19,32 @@ evidence and a confidence score for every decision.
 swift build
 swift test
 swift run mergedesk --help
+./Scripts/build-app.sh          # → .build/MergeDesk.app (ad-hoc signed, for local use)
+open .build/MergeDesk.app
 ```
+
+## The app
+
+Add a repository with **+** (any folder inside a clone; the folder is never modified). The window has three panes:
+
+- **Repositories** — everything you added; right-click to reveal in Finder or remove.
+- **Branches** — one row per branch name (local and remote copies merged), with where it lives, last commit,
+  author, ahead/behind against the first two integration branches, and badges (Integration, Protected, Stale,
+  Merged, Never pushed, N unpushed, N to pull). Filter with **All · Mine · Active · Stale · Merged · Unpushed**, a
+  branch-name prefix, or search by branch or author; click a column to sort; ⌘R refreshes.
+- **Detail** — the selected branch's commits not yet in the integration branch, files changed since it forked, and
+  other active branches that changed the same files *since the two diverged* (measured from each pair's own merge
+  base, so commits both already share don't count).
+
+Comparisons use the **primary remote's copy** of each branch (what the team sees); local-only commits show as
+"unpushed". Run `git fetch` first to see your team's latest pushes — Merge Desk itself never fetches or writes
+(fetching becomes part of the daily run in MD-2). `MERGEDESK_SUPPORT_DIR=/some/folder` points the app and CLI
+at another support folder (demos, testing).
 
 | Command | What it does |
 |---|---|
+| `mergedesk list [--filter SCOPE] [--search TEXT] [--prefix P] [--json]` | Branches with ahead/behind, staleness and notes |
+| `mergedesk show BRANCH [--max-commits N] [--max-files N] [--json]` | One branch: copies, comparisons, commits, files, overlaps |
 | `mergedesk version` | Merge Desk and git versions |
 | `mergedesk doctor [--repo PATH]` | Checks git, the repository, its `.mergedesk.json` and that the integration branches exist |
 | `mergedesk config validate [--repo PATH \| --file PATH]` | Validates a config; exits 1 on errors, prints warnings |
@@ -37,10 +60,14 @@ Sources/
   MergeDeskCore/        all logic, no UI
     Git/                GitClient (the only code that runs git), GitQuery (command + parser pairs), parsers, models
     Config/             RepoConfig (.mergedesk.json), ConfigLoader (decode + validate), GlobPattern
-    Storage/            AuditLog (append-only JSONL), SupportPaths (~/Library/Application Support/MergeDesk)
-  MergeDeskFixtures/    scripted, deterministic git repositories, one per conflict pattern
+    Inventory/          InventoryBuilder, BranchRecord, BranchFilter, BranchDetailLoader, ComparisonCache
+    Storage/            AuditLog (append-only JSONL), RepositoryRegistry, SupportPaths (~/Library/Application Support/MergeDesk)
+  MergeDeskFixtures/    scripted, deterministic git repositories: conflict patterns + an origin/clone inventory fixture
+  MergeDeskUI/          @Observable view models (AppModel, RepositoryModel) and SwiftUI views
+  MergeDeskApp/         the app entry point only
   mergedesk/            CLI (swift-argument-parser)
-Tests/MergeDeskCoreTests/
+Scripts/build-app.sh    packages MergeDeskApp as MergeDesk.app
+Tests/MergeDeskCoreTests/  Tests/MergeDeskUITests/
 docs/
   PLAN.md               product plan, decisions and phases
   mergedesk.schema.json JSON schema for editors
@@ -56,6 +83,7 @@ see [docs/mergedesk.schema.json](docs/mergedesk.schema.json) and the
 | Key | Default | Meaning |
 |---|---|---|
 | `integrationBranches` | `["develop", "main"]` | Branches everything is compared and predicted against |
+| `primaryRemote` | `"origin"` | Remote whose tips are compared (the team's shared state) |
 | `protectedBranches` | `["main", "develop", "release/*"]` | Only changed through a pull request |
 | `staleDays` | `21` | Days without commits before a branch is stale |
 | `activeBranchPrefixes` | `[]` (all) | Branches in the branch × branch conflict matrix |

@@ -3,6 +3,7 @@
   "$comment": "Draft for Mercury-iOSApp (adopted in MD-8). File classes come from the 6-month merge history in docs/PLAN.md §1.",
   "schemaVersion": 1,
   "integrationBranches": ["develop", "main"],
+  "primaryRemote": "origin",
   "protectedBranches": ["main", "develop", "release/*"],
   "staleDays": 21,
   "activeBranchPrefixes": [],

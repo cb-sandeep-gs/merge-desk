@@ -222,6 +222,33 @@ public enum GitOutputParser {
         return .init(kind: kind, state: String(parts[1]), path: String(parts[fieldCount]), originalPath: nil)
     }
 
+    // MARK: - log
+
+    /// Unit separator between fields; commits are NUL-separated by `-z`. Subjects never contain U+001F.
+    private static let unitSeparator = UInt8(0x1F)
+    static let commitFormat = ["%H", "%an", "%ae", "%ct", "%s"].joined(separator: "%x1f")
+    private static let commitFieldCount = 5
+
+    public static func parseCommits(_ data: Data) throws -> [CommitSummary] {
+        try data.split(separator: nul, omittingEmptySubsequences: true).map { record in
+            // `-z` puts a newline before every record but the first; strip it so ids parse.
+            let trimmed = record.drop { $0 == newline }
+            let fields = trimmed.split(separator: unitSeparator, omittingEmptySubsequences: false).map { decode($0) }
+            guard fields.count == commitFieldCount, isObjectID(fields[0]), let seconds = TimeInterval(fields[3]) else {
+                throw GitError.unexpectedOutput(query: "log", detail: "malformed commit record")
+            }
+            return CommitSummary(id: fields[0], authorName: fields[1], authorEmail: fields[2],
+                                 date: Date(timeIntervalSince1970: seconds), subject: fields[4])
+        }
+    }
+
+    // MARK: - path lists (-z)
+
+    /// NUL-separated paths, sorted for stable output.
+    public static func parsePathList(_ data: Data) -> [String] {
+        data.split(separator: nul, omittingEmptySubsequences: true).map { decode($0) }.sorted()
+    }
+
     // MARK: - version
 
     public static func parseVersion(_ text: String) throws -> GitVersion {

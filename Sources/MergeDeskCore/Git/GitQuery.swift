@@ -129,3 +129,41 @@ extension GitQuery where Output == WorkingTreeStatus {
         }
     }
 }
+
+extension GitQuery where Output == String? {
+    /// A git config value, or nil when it is not set (`git config --get` exits 1 for "not set").
+    public static func configValue(_ key: String) -> GitQuery<String?> {
+        GitQuery<String?>(
+            name: "config --get",
+            arguments: ["config", "--get", key],
+            acceptedExitCodes: [GitExitCode.success, GitExitCode.one]
+        ) { result in
+            let value = GitOutputParser.trimmedLine(result.standardOutput)
+            return result.exitCode == GitExitCode.success && !value.isEmpty ? value : nil
+        }
+    }
+}
+
+extension GitQuery where Output == [CommitSummary] {
+    /// Commits reachable from `tip` but not from `base`, newest first, at most `maxCount`.
+    public static func commits(from base: String, to tip: String, maxCount: Int) -> GitQuery<[CommitSummary]> {
+        GitQuery(
+            name: "log",
+            arguments: ["log", "-z", "--format=\(GitOutputParser.commitFormat)", "--max-count=\(maxCount)", "\(base)..\(tip)", "--"]
+        ) { result in
+            try GitOutputParser.parseCommits(result.standardOutput)
+        }
+    }
+}
+
+extension GitQuery where Output == [String] {
+    /// Files `tip` changed since it forked from `base` (three-dot: relative to the merge base), sorted.
+    public static func changedFiles(base: String, tip: String) -> GitQuery<[String]> {
+        GitQuery(
+            name: "diff --name-only",
+            arguments: ["diff", "--name-only", "-z", "--no-renames", "\(base)...\(tip)", "--"]
+        ) { result in
+            GitOutputParser.parsePathList(result.standardOutput)
+        }
+    }
+}

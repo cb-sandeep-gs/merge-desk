@@ -20,8 +20,8 @@ public struct GitVersion: Sendable, Equatable, Comparable, CustomStringConvertib
 }
 
 /// A local branch or a remote-tracking branch.
-public struct GitRef: Sendable, Equatable, Hashable {
-    public enum Kind: Sendable, Equatable, Hashable {
+public struct GitRef: Sendable, Equatable, Hashable, Codable {
+    public enum Kind: Sendable, Equatable, Hashable, Codable {
         case local
         case remote(name: String)
     }
@@ -49,7 +49,7 @@ public struct GitRef: Sendable, Equatable, Hashable {
 }
 
 /// Commit counts between a branch and a base it is compared with.
-public struct AheadBehind: Sendable, Equatable {
+public struct AheadBehind: Sendable, Equatable, Hashable, Codable {
     /// Commits on the branch that the base does not have.
     public let ahead: Int
     /// Commits on the base that the branch does not have.
@@ -109,4 +109,21 @@ public struct WorkingTreeStatus: Sendable, Equatable {
     /// True when nothing tracked or untracked differs from HEAD (ignored files don't count).
     public var isClean: Bool { entries.allSatisfy { $0.kind == .ignored } }
     public var hasConflicts: Bool { entries.contains { $0.kind == .unmerged } }
+}
+
+/// One commit in a branch listing.
+public struct CommitSummary: Sendable, Equatable, Codable, Identifiable {
+    public let id: String
+    public let authorName: String
+    public let authorEmail: String
+    public let date: Date
+    public let subject: String
+
+    public init(id: String, authorName: String, authorEmail: String, date: Date, subject: String) {
+        self.id = id
+        self.authorName = authorName
+        self.authorEmail = authorEmail
+        self.date = date
+        self.subject = subject
+    }
 }
